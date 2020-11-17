@@ -1,8 +1,11 @@
 package watcher
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/linkerd/linkerd2/controller/k8s"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -40,4 +43,24 @@ func invalidService(authority string) InvalidService {
 
 func (i ID) String() string {
 	return fmt.Sprintf("%s/%s", i.Namespace, i.Name)
+}
+
+// PodToAddressSet converts a Pod spec into a set of addresses.
+func PodToAddressSet(k8sAPI *k8s.API, pod *corev1.Pod) AddressSet {
+	ownerKind, ownerName := k8sAPI.GetOwnerKindAndName(context.Background(), pod, true)
+	return AddressSet{
+		Addresses: map[PodID]Address{
+			{
+				Name:      pod.Name,
+				Namespace: pod.Namespace,
+			}: {
+				IP:        pod.Status.PodIP,
+				Port:      0, // Will be set by individual subscriptions
+				Pod:       pod,
+				OwnerName: ownerName,
+				OwnerKind: ownerKind,
+			},
+		},
+		Labels: map[string]string{"namespace": pod.Namespace},
+	}
 }

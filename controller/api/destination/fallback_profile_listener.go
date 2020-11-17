@@ -76,6 +76,8 @@ func (p *primaryProfileListener) Update(profile *sp.ServiceProfile) {
 	p.parent.underlying.Update(nil)
 }
 
+func (p *primaryProfileListener) DeleteEndpoint() {}
+
 // Backup
 
 func (b *backupProfileListener) Update(profile *sp.ServiceProfile) {
@@ -96,3 +98,5 @@ func (b *backupProfileListener) Update(profile *sp.ServiceProfile) {
 	// Our value was cleared and there is no primary value.
 	b.parent.underlying.Update(nil)
 }
+
+func (b *backupProfileListener) DeleteEndpoint() {}

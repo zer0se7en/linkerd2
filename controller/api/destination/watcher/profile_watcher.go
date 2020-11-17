@@ -38,6 +38,7 @@ type (
 	// ProfileUpdateListener is the interface that subscribers must implement.
 	ProfileUpdateListener interface {
 		Update(profile *sp.ServiceProfile)
+		DeleteEndpoint()
 	}
 )
 

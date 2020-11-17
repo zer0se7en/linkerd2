@@ -16,6 +16,8 @@ func (m *mockListener) Update(profile *sp.ServiceProfile) {
 	m.received = append(m.received, profile)
 }
 
+func (m *mockListener) DeleteEndpoint() {}
+
 func (m *mockListener) ClientClose() <-chan struct{} {
 	return make(<-chan struct{})
 }

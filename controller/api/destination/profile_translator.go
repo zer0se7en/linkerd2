@@ -51,6 +51,11 @@ func (pt *profileTranslator) Update(profile *sp.ServiceProfile) {
 	pt.stream.Send(destinationProfile)
 }
 
+func (pt *profileTranslator) DeleteEndpoint() {
+	pt.endpoint = nil
+	pt.Update(nil)
+}
+
 func (pt *profileTranslator) defaultServiceProfile() *pb.DestinationProfile {
 	return &pb.DestinationProfile{
 		Routes:             []*pb.Route{},

@@ -24,6 +24,7 @@ type (
 		profiles      *watcher.ProfileWatcher
 		trafficSplits *watcher.TrafficSplitWatcher
 		ips           *watcher.IPWatcher
+		pods          *watcher.PodWatcher
 
 		enableH2Upgrade     bool
 		controllerNS        string
@@ -66,12 +67,14 @@ func NewServer(
 	profiles := watcher.NewProfileWatcher(k8sAPI, log)
 	trafficSplits := watcher.NewTrafficSplitWatcher(k8sAPI, log)
 	ips := watcher.NewIPWatcher(k8sAPI, endpoints, log)
+	pods := watcher.NewPodWatcher(k8sAPI, log)
 
 	srv := server{
 		endpoints,
 		profiles,
 		trafficSplits,
 		ips,
+		pods,
 		enableH2Upgrade,
 		controllerNS,
 		identityTrustDomain,
@@ -197,7 +200,7 @@ func (s *server) GetProfile(dest *pb.GetDestination, stream pb.Destination_GetPr
 			if pod != nil {
 				// If the IP maps to a pod, we create a single endpoint and
 				// return it in the DestinationProfile response
-				podSet := s.ips.PodToAddressSet(pod).WithPort(port)
+				podSet := watcher.PodToAddressSet(s.k8sAPI, pod).WithPort(port)
 				podID := watcher.PodID{
 					Namespace: pod.Namespace,
 					Name:      pod.Name,
@@ -212,6 +215,15 @@ func (s *server) GetProfile(dest *pb.GetDestination, stream pb.Destination_GetPr
 			// sent without subscribing for future updates. If the IP mapped
 			// to a pod, then the endpoint will be set in the response.
 			translator := newProfileTranslator(stream, log, nil, "", endpoint)
+
+			if pod != nil {
+				err := s.pods.Subscribe(ip.String(), port, translator)
+				if err != nil {
+					return err
+				}
+				defer s.pods.Unsubscribe(ip.String(), translator)
+			}
+
 			translator.Update(nil)
 
 			select {

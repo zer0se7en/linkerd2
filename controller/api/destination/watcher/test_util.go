@@ -29,6 +29,9 @@ func (dpl *DeletingProfileListener) Update(profile *sp.ServiceProfile) {
 	}
 }
 
+// DeleteEndpoint TODO
+func (dpl *DeletingProfileListener) DeleteEndpoint() {}
+
 // BufferingProfileListener implements ProfileUpdateListener and stores updates
 // in a slice.  Useful for unit tests.
 type BufferingProfileListener struct {
@@ -46,6 +49,9 @@ func NewBufferingProfileListener() *BufferingProfileListener {
 func (bpl *BufferingProfileListener) Update(profile *sp.ServiceProfile) {
 	bpl.Profiles = append(bpl.Profiles, profile)
 }
+
+// DeleteEndpoint TODO
+func (bpl *BufferingProfileListener) DeleteEndpoint() {}
 
 func testCompare(t *testing.T, expected interface{}, actual interface{}) {
 	if !reflect.DeepEqual(expected, actual) {

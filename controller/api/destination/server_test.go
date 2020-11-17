@@ -108,12 +108,14 @@ spec:
 	profiles := watcher.NewProfileWatcher(k8sAPI, log)
 	trafficSplits := watcher.NewTrafficSplitWatcher(k8sAPI, log)
 	ips := watcher.NewIPWatcher(k8sAPI, endpoints, log)
+	pods := watcher.NewPodWatcher(k8sAPI, log)
 
 	return &server{
 		endpoints,
 		profiles,
 		trafficSplits,
 		ips,
+		pods,
 		false,
 		"linkerd",
 		"trust.domain",

@@ -1,7 +1,6 @@
 package watcher
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
@@ -217,7 +216,7 @@ func (iw *IPWatcher) addPod(obj interface{}) {
 		return
 	}
 	ss := iw.getOrNewServiceSubscriptions(pod.Status.PodIP)
-	ss.updatePod(iw.PodToAddressSet(pod))
+	ss.updatePod(PodToAddressSet(iw.k8sAPI, pod))
 }
 
 func (iw *IPWatcher) deletePod(obj interface{}) {
@@ -295,7 +294,7 @@ func (iw *IPWatcher) getOrNewServiceSubscriptions(clusterIP string) *serviceSubs
 				iw.log.Errorf("Pod IP conflict: %v, %v", objs[0], objs[1])
 			}
 			if len(pods) == 1 {
-				ss.pod = iw.PodToAddressSet(pods[0])
+				ss.pod = PodToAddressSet(iw.k8sAPI, pods[0])
 			}
 		}
 
@@ -309,26 +308,6 @@ func (iw *IPWatcher) getServiceSubscriptions(clusterIP string) (ss *serviceSubsc
 	defer iw.RUnlock()
 	ss, ok = iw.publishers[clusterIP]
 	return
-}
-
-// PodToAddressSet converts a Pod spec into a set of Addresses.
-func (iw *IPWatcher) PodToAddressSet(pod *corev1.Pod) AddressSet {
-	ownerKind, ownerName := iw.k8sAPI.GetOwnerKindAndName(context.Background(), pod, true)
-	return AddressSet{
-		Addresses: map[PodID]Address{
-			PodID{
-				Name:      pod.Name,
-				Namespace: pod.Namespace,
-			}: Address{
-				IP:        pod.Status.PodIP,
-				Port:      0, // Will be set by individual subscriptions
-				Pod:       pod,
-				OwnerName: ownerName,
-				OwnerKind: ownerKind,
-			},
-		},
-		Labels: map[string]string{"namespace": pod.Namespace},
-	}
 }
 
 ////////////////////////
@@ -431,7 +410,7 @@ func (ss *serviceSubscriptions) unsubscribe(port Port, listener EndpointUpdateLi
 func singletonAddress(ip string, port Port) AddressSet {
 	return AddressSet{
 		Addresses: map[PodID]Address{
-			PodID{}: Address{
+			{}: {
 				IP:   ip,
 				Port: port,
 			},

@@ -40,6 +40,8 @@ func (tsa *trafficSplitAdaptor) Update(profile *sp.ServiceProfile) {
 	tsa.publish()
 }
 
+func (tsa *trafficSplitAdaptor) DeleteEndpoint() {}
+
 func (tsa *trafficSplitAdaptor) UpdateTrafficSplit(split *ts.TrafficSplit) {
 	if tsa.split == nil && split == nil {
 		return
