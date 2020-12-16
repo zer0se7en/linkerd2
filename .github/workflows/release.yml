@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        target: [proxy, controller, web, cni-plugin, debug, cli-bin, grafana]
+        # Keep in sync with integration_tests.yaml matrix build
+        target: [proxy, controller, web, cni-plugin, debug, cli-bin, grafana, jaeger-webhook]
     name: Docker build (${{ matrix.target }})
     timeout-minutes: 30
     steps:
@@ -69,7 +70,7 @@ jobs:
       with:
         name: image-archives
         path: /home/runner/archives
-  # todo: Keep in sync with `kind_integration.yml`
+  # todo: Keep in sync with `integration_tests.yml`
   windows_static_cli_tests:
     name: Static CLI tests (windows)
     timeout-minutes: 30
@@ -93,7 +94,7 @@ jobs:
         name: image-archives
     - name: Run CLI Integration tests
       run: go test --failfast --mod=readonly ".\test\cli" --linkerd=$PWD\image-archives\linkerd-windows.exe --cli-tests -v
-  kind_integration_tests:
+  integration_tests:
     strategy:
       matrix:
         integration_test:
@@ -190,7 +191,7 @@ jobs:
     # otherwise the jobs below that depend on this one won't run
     name: Pack Chocolatey release
     timeout-minutes: 30
-    needs: [kind_integration_tests, arm64_integration_tests]
+    needs: [integration_tests, arm64_integration_tests]
     runs-on: windows-2019
     steps:
     - name: Checkout code

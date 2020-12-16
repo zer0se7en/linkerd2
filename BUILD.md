@@ -105,23 +105,26 @@ linkerd2_components
 Depending on use case, there are several configurations with which to develop
 and run Linkerd2:
 
-- [Comprehensive](#comprehensive): Integrated configuration using Minikube, most
+- [Comprehensive](#comprehensive): Integrated configuration using k3d, most
   closely matches release.
 - [Web](#web): Development of the Linkerd2 Dashboard.
 
 ### Comprehensive
 
 This configuration builds all Linkerd2 components in Docker images, and deploys
-them onto Minikube. This setup most closely parallels our recommended production
-installation, documented in [Getting
+them onto a k3d cluster. This setup most closely parallels our recommended
+production installation, documented in [Getting
 Started](https://linkerd.io/2/getting-started/)
 
-These commands assume a working
-[Minikube](https://github.com/kubernetes/minikube) environment.
-
 ```bash
-# build all docker images, using minikube as our docker registry
-DOCKER_TRACE=1 bin/mkube bin/docker-build
+# create the k3d cluster
+bin/k3d cluster create
+
+# build all docker images
+DOCKER_TRACE=1 bin/docker-build
+
+# load all the images into k3d
+bin/image-load --k3d
 
 # install linkerd
 bin/linkerd install | kubectl apply -f -
@@ -139,8 +142,8 @@ bin/linkerd dashboard
 # install the demo app
 curl https://run.linkerd.io/emojivoto.yml | bin/linkerd inject - | kubectl apply -f -
 
-# view demo app
-minikube -n emojivoto service web-svc
+# port-forward the demo app's frontend to see it at http://localhost:8080
+kubectl -n emojivoto port-forward svc/web-svc 8080:80
 
 # view details per deployment
 bin/linkerd -n emojivoto stat deployments
@@ -172,9 +175,9 @@ linkerd inject https://gist.githubusercontent.com/Pothulapati/245842ce7f319e8bcd
 
 ### Publishing images
 
-The example above builds and publishes the docker images into Minikube's docker
-registry. For testing your built images outside your local environment, you need
-to publish your images so they become accessible in those external environments.
+The example above builds and loads the docker images into k3d. For testing your
+built images outside your local environment, you need to publish your images so
+they become accessible in those external environments.
 
 To signal `bin/docker-build` or any of the more specific scripts
 `bin/docker-build-*` what registry to use, just set the environment variable
@@ -292,6 +295,46 @@ automatically regenerated with the command:
 ```sh
 go test ./cli/cmd/... --update
 ```
+
+#### Generating helm charts docs
+
+Whenever a new chart is created, or updated a readme should be generated from
+the chart's values.yml. This can be done by utilizing the bundled
+[helm-docs](https://github.com/norwoodj/helm-docs) binary. For adding additional
+information, such as specific installation instructions a readme template is
+required to be created. Check existing charts for example.
+
+##### Annotating values.yml
+
+To allow helm-docs to properly document the values in values.yml a descriptive
+comment is required. This can be done in two ways.
+Either comment the value directly above with
+`# -- This is a really nice value` where the double dashes automatically
+annotates the value. Another explicit usage is to type out the value name.
+`# global.MyNiceValue -- I really like this value`
+
+##### Using helm-docs
+
+Example usage:
+
+```sh
+bin/helm-docs
+bin/helm-docs --dry-run #Prints to cli instead
+bin/helm-docs --chart-search-root=./charts #Sets search root for charts
+bin/helm-docs --template-files=README.md.gotmpl #Sets the template file used
+```
+
+Note:
+The tool searches through the current directory and sub-directories by default.
+For additional information checkout their repo above.
+
+##### Markdown templates
+
+In order to accommodate for extra data that might not have a proper place in the
+´values.yaml´ file the corresponding ´README.md.gotmpl´ can be modified for each
+chart. This template allows the standard markdown syntax as well as the go
+templating functions. Checkout
+[helm-docs](https://github.com/norwoodj/helm-docs) for more info.
 
 ##### Pretty-printed diffs for templated text
 

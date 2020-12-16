@@ -852,6 +852,7 @@ data:
       clusterNetworks: 10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16
       cniEnabled: false
       controlPlaneTracing: false
+      controlPlaneTracingNamespace: linkerd-jaeger
       controllerComponentLabel: linkerd.io/control-plane-component
       controllerImageVersion: linkerd-version
       controllerLogLevel: info
@@ -904,9 +905,6 @@ data:
             limit: 250Mi
             request: 20Mi
         saMountPath: null
-        trace:
-          collectorSvcAccount: default
-          collectorSvcAddr: ""
         uid: 2102
         waitBeforeExitSeconds: 0
       proxyContainerName: linkerd-proxy
@@ -942,6 +940,7 @@ data:
         clusterNetworks: 10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16
         cniEnabled: false
         controlPlaneTracing: false
+        controlPlaneTracingNamespace: linkerd-jaeger
         controllerComponentLabel: linkerd.io/control-plane-component
         controllerImageVersion: linkerd-version
         controllerLogLevel: info
@@ -953,6 +952,7 @@ data:
         identityTrustAnchorsPEM: test-trust-anchor
         identityTrustDomain: test.trust.domain
         imagePullPolicy: IfNotPresent
+        imagePullSecrets: null
         linkerdNamespaceLabel: linkerd.io/is-control-plane
         linkerdVersion: linkerd-version
         namespace: linkerd
@@ -993,9 +993,6 @@ data:
               limit: 250Mi
               request: 20Mi
           saMountPath: null
-          trace:
-            collectorSvcAccount: default
-            collectorSvcAddr: ""
           uid: 2102
           waitBeforeExitSeconds: 0
         proxyContainerName: linkerd-proxy
@@ -1025,6 +1022,7 @@ data:
         workloadNamespaceLabel: linkerd.io/workload-ns
       image:
         name: ghcr.io/linkerd/grafana
+        tag: null
       partials:
         global:
           cliVersion: ""
@@ -1032,6 +1030,7 @@ data:
           clusterNetworks: 10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16
           cniEnabled: false
           controlPlaneTracing: false
+          controlPlaneTracingNamespace: linkerd-jaeger
           controllerComponentLabel: linkerd.io/control-plane-component
           controllerImageVersion: linkerd-version
           controllerLogLevel: info
@@ -1043,6 +1042,7 @@ data:
           identityTrustAnchorsPEM: test-trust-anchor
           identityTrustDomain: test.trust.domain
           imagePullPolicy: IfNotPresent
+          imagePullSecrets: null
           linkerdNamespaceLabel: linkerd.io/is-control-plane
           linkerdVersion: linkerd-version
           namespace: linkerd
@@ -1083,9 +1083,6 @@ data:
                 limit: 250Mi
                 request: 20Mi
             saMountPath: null
-            trace:
-              collectorSvcAccount: default
-              collectorSvcAddr: ""
             uid: 2102
             waitBeforeExitSeconds: 0
           proxyContainerName: linkerd-proxy
@@ -1113,6 +1110,8 @@ data:
           proxyInjectAnnotation: linkerd.io/inject
           proxyInjectDisabled: disabled
           workloadNamespaceLabel: linkerd.io/workload-ns
+      proxy:
+        resources: null
       resources:
         cpu:
           limit: ""
@@ -1160,6 +1159,8 @@ data:
           values:
           - disabled
     prometheus:
+      alertManagers: null
+      alertRelabelConfigs: null
       args:
         config.file: /etc/prometheus/prometheus.yml
         log.level: info
@@ -1172,6 +1173,7 @@ data:
         clusterNetworks: 10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16
         cniEnabled: false
         controlPlaneTracing: false
+        controlPlaneTracingNamespace: linkerd-jaeger
         controllerComponentLabel: linkerd.io/control-plane-component
         controllerImageVersion: linkerd-version
         controllerLogLevel: info
@@ -1183,6 +1185,7 @@ data:
         identityTrustAnchorsPEM: test-trust-anchor
         identityTrustDomain: test.trust.domain
         imagePullPolicy: IfNotPresent
+        imagePullSecrets: null
         linkerdNamespaceLabel: linkerd.io/is-control-plane
         linkerdVersion: linkerd-version
         namespace: linkerd
@@ -1223,9 +1226,6 @@ data:
               limit: 250Mi
               request: 20Mi
           saMountPath: null
-          trace:
-            collectorSvcAccount: default
-            collectorSvcAddr: ""
           uid: 2102
           waitBeforeExitSeconds: 0
         proxyContainerName: linkerd-proxy
@@ -1265,6 +1265,7 @@ data:
           clusterNetworks: 10.0.0.0/8,100.64.0.0/10,172.16.0.0/12,192.168.0.0/16
           cniEnabled: false
           controlPlaneTracing: false
+          controlPlaneTracingNamespace: linkerd-jaeger
           controllerComponentLabel: linkerd.io/control-plane-component
           controllerImageVersion: linkerd-version
           controllerLogLevel: info
@@ -1276,6 +1277,7 @@ data:
           identityTrustAnchorsPEM: test-trust-anchor
           identityTrustDomain: test.trust.domain
           imagePullPolicy: IfNotPresent
+          imagePullSecrets: null
           linkerdNamespaceLabel: linkerd.io/is-control-plane
           linkerdVersion: linkerd-version
           namespace: linkerd
@@ -1316,9 +1318,6 @@ data:
                 limit: 250Mi
                 request: 20Mi
             saMountPath: null
-            trace:
-              collectorSvcAccount: default
-              collectorSvcAddr: ""
             uid: 2102
             waitBeforeExitSeconds: 0
           proxyContainerName: linkerd-proxy
@@ -1346,6 +1345,9 @@ data:
           proxyInjectAnnotation: linkerd.io/inject
           proxyInjectDisabled: disabled
           workloadNamespaceLabel: linkerd.io/workload-ns
+      proxy:
+        resources: null
+      remoteWrite: null
       resources:
         cpu:
           limit: ""
@@ -1353,6 +1355,9 @@ data:
         memory:
           limit: 8192Mi
           request: 300Mi
+      ruleConfigMapMounts: null
+      scrapeConfigs: null
+      sideCarContainers: null
     proxyInjector:
       caBundle: test-proxy-injector-ca-bundle
       crtPEM: test-proxy-injector-crt-pem
@@ -1401,8 +1406,6 @@ data:
         limit: 250Mi
         request: 50Mi
     tolerations: null
-    tracing:
-      enabled: false
     webImage: ghcr.io/linkerd/web
     webProxyResources: null
     webResources:
@@ -1606,7 +1609,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -1868,7 +1871,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -2148,7 +2151,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -2445,7 +2448,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -2686,7 +2689,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -2969,7 +2972,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -3239,7 +3242,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -3557,7 +3560,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
@@ -4000,7 +4003,7 @@ spec:
               fieldPath: metadata.namespace
         - name: _pod_nodeName
           valueFrom:
-             fieldRef:
+            fieldRef:
               fieldPath: spec.nodeName
         - name: LINKERD2_PROXY_DESTINATION_CONTEXT
           value: |
