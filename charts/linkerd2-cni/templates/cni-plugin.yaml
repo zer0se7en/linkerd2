@@ -184,6 +184,9 @@ spec:
       annotations:
         {{.Values.createdByAnnotation}}: {{default (printf "linkerd/helm %s" .Values.cniPluginVersion) .Values.cliVersion}}
     spec:
+      {{- if .Values.tolerations }}
+      {{- include "linkerd.tolerations" . | nindent 6 }}
+      {{- end }}
       nodeSelector:
         beta.kubernetes.io/os: linux
       hostNetwork: true
@@ -217,9 +220,14 @@ spec:
         - name: SLEEP
           value: "true"
         lifecycle:
+          # In some edge-cases this helps ensure that cleanup() is called in the container's script
+          # https://github.com/linkerd/linkerd2/issues/2355
           preStop:
             exec:
-              command: ["kill","-15","1"]
+              command:
+              - /bin/sh
+              - -c
+              - kill -15 1
         volumeMounts:
         {{- if ne .Values.destCNIBinDir .Values.destCNINetDir }}
         - mountPath: /host{{.Values.destCNIBinDir}}

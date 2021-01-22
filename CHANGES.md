@@ -1,6 +1,165 @@
 
 # Changes
 
+## edge-21.1.3
+
+This edge release improves proxy diagnostics and recovery in situations where
+the proxy is temporarily unable to route requests. Additionally, the `viz` and
+`multicluster` CLI sub-commands have been updated for consistency.
+
+Full release notes:
+
+* Added Helm-style `set`, `set-string`, `values`, `set-files` customization
+  flags for the `linkerd install` and `linkerd multicluster install` commands
+* Fixed an issue where `linkerd metrics` could return metrics for the incorrect
+  set of pods when there are overlapping label selectors
+* Added tap-injector to linkerd-viz which is responsible for adding the tap
+  service name environment variable to the Linkerd proxy container
+* Improved diagnostics when the proxy is temporarily unable to route requests
+* Made proxy recovery for a service more robust when the proxy is unable to
+  route requests, even when new requests are being received
+* Added `client` and `server` prefixes in the proxy logs for socket-level errors
+  to indicate which side of the proxy encountered the error
+* Improved jaeger-injector reliability in environments with many resources by
+  adding watch RBAC permissions
+* Added check to confirm whether the jaeger-injector pod is in running state
+  (thanks @yashvardhan-kukreja!)
+* Fixed a crash in the destination controller when EndpointSlices are enabled
+  (thanks @oleh-ozimok!)
+* Added a `linkerd viz check` sub-command to verify the states of the
+  `linkerd-viz` components
+* Added a `log-format` flag to optionally output the control plane component log
+  output as JSON (thanks @mo4islona!)
+* Updated the logic in the `metrics` and `profile` subcommands to use the
+  `namespace` specified by the `current-context` of the KUBECONFIG so that it is
+  no longer necessary to use the `--namespace` flag to query resources in the
+  current namespace. Queries for resources in namespaces other than the
+  current namespace still require the `--namespace` flag
+* Added new pod 'linkerd-metrics-api' set up by `linkerd viz install` that
+  manages all functionality dependent on Prometheus, thus removing most of the
+  dependencies on Prometheus from the linkerd core installation
+* Removed need to have linkerd-viz installed for the
+  `linkerd multicluster check` command to properly work.
+
+## edge-21.1.2
+
+This edge release continues the work on decoupling non-core Linkerd components.
+Commands that use the viz extension i.e, `dashboard`, `edges`, `routes`,
+`stat`, `tap` and `top` are moved to the `viz` sub-command. These commands are still
+available under root but are marked as deprecated and will be removed in a
+later stable release.
+
+This release also upgrades the proxy's dependencies to the Tokio v1 ecosystem.
+
+* Moved sub-commands that use the viz extension under `viz`
+* Started ignoring pods with `Succeeded` status when watching IP addresses
+  in destination. This allows the re-use of IPs of terminated pods
+* Support Bring your own Jaeger use-case by adding `collector.jaegerAddr` in
+  the Jaeger extension.
+* Fixed an issue with the generation of working manifests in the
+  `podAntiAffinity` use-case
+* Added support for the modification of proxy resources in the viz
+  extension through `values.yaml` in Helm and flags in CLI.
+* Improved error reporting for port-forward logic with namespace
+  and pod data, used across dashboard, checks, etc
+  (thanks @piyushsingariya)
+* Added support to disable the rendering of `linkerd-viz` namespace
+  resource in the viz extension (thanks @nlamirault)
+* Made service-profile generation work offline with `--ignore-cluster`
+  flag (thanks @piyushsingariya)
+* Upgraded the proxy's dependencies to the Tokio v1 ecosystem
+
+## edge-21.1.1
+
+This edge release introduces a new "opaque transport" feature that allows the
+proxy to securely transport server-speaks-first and otherwise opaque TCP
+traffic. Using the `config.linkerd.io/opaque-ports` annotation on pods and
+namespaces, users can configure ports that should skip the proxy's protocol
+detection.
+
+Additionally, a new `linkerd-viz` extension has been introduced that separates
+the installation of the Grafana, Prometheus, web, and tap components. This
+extension closely follows the Jaeger and multicluster extensions; users can
+`install` and `uninstall` with the `linkerd viz ..` command as well as configure
+for HA with the `--ha` flag.
+
+The `linkerd viz install` command does not have any cli flags to customize the
+install directly, but instead follows the Helm way of customization by using
+flags such as `set`, `set-string`, `values`, `set-files`.
+
+Finally, a new `/shutdown` admin endpoint that may only be accessed over the
+loopback network has been added. This allows batch jobs to gracefully terminate
+the proxy on completion. The `linkerd-await` utility can be used to automate
+this.
+
+* Added a new `linkerd multicluster check` command to validate that the
+  `linkerd-multicluster` extension is working correctly
+* Fixed description in the `linkerd edges` command (thanks @jsoref!)
+* Moved the Grafana, Prometheus, web, and tap components into a new Viz chart,
+  following the same extension model that multicluster and Jaeger follow
+* Introduced a new "opaque transport" feature that allows the proxy to securely
+  transport server-speaks-first and otherwise opaque TCP traffic
+* Removed the check comparing the `ca.crt` field in the identity issuer secret
+  and the trust anchors in the Linkerd config; these values being different is
+  not a failure case for the `linkerd check` command (thanks @cypherfox!)
+* Removed the Prometheus check from the `linkerd check` command since it now
+  depends on a component that is installed with the Viz extension
+* Fixed error messages thrown by the cert checks in `linkerd check` (thanks
+  @pradeepnnv!)
+* Added PodDisruptionBudgets to the control plane components so that they cannot
+  be all terminated at the same time during disruptions (thanks @tustvold!)
+* Fixed an issue that displayed the wrong `linkerd.io/proxy-version` when it is
+  overridden by annotations (thanks @mateiidavid!)
+* Added support for custom registries in the `linkerd-viz` helm chart (thanks
+  @jimil749!)
+* Renamed `proxy-mutator` to `jaeger-injector` in the `linkerd-jaeger` extension
+* Added a new `/shutdown` admin endpoint that may only be accessed over the
+  loopback network allowing batch jobs to gracefully terminate the proxy on
+  completion
+* Introduced the `linkerd identity` command, used to fetch the TLS certificates
+  for injected pods (thanks @jimil749)
+* Fixed an issue with the CNI plugin where it was incorrectly terminating and
+  emitting error events (thanks @mhulscher!)
+* Re-added support for non-LoadBalancer service types in the
+  `linkerd-multicluster` extension
+
+## edge-20.12.4
+
+This edge release adds support for the `config.linkerd.io/opaque-ports`
+annotation on pods and namespaces, to configure ports that should skip the
+proxy's protocol detection. In addition, it adds new CLI commands related to the
+`linkerd-jaeger` extension, fixes bugs in the CLI `install` and `upgrade`
+commands and Helm charts, and fixes a potential false positive in the proxy's
+HTTP protocol detection. Finally, it includes improvements in proxy performance
+and memory usage, including an upgrade for the proxy's dependency on the Tokio
+async runtime.
+
+* Added support for the `config.linkerd.io/opaque-ports` annotation on pods and
+  namespaces, to indicate to the proxy that some ports should skip protocol
+  detection
+* Fixed an issue where `linkerd install --ha` failed to honor flags
+* Fixed an issue where `linkerd upgrade --ha` can override existing configs
+* Added missing label to the `linkerd-config-overrides` secret to avoid breaking
+  upgrades performed with the help of `kubectl apply --prune`
+* Added a missing icon to Jaeger Helm chart
+* Added new `linkerd jaeger check` CLI command to validate that the
+  `linkerd-jaeger` extension is working correctly
+* Added new `linkerd jaeger uninstall` CLI command to print the `linkerd-jaeger`
+  extension's resources so that they can be piped into `kubectl delete`
+* Fixed an issue where the `linkerd-cni` daemgitonset may not be installed on all
+  intended nodes, due to missing tolerations to the `linkerd-cni` Helm chart
+  (thanks @rish-onesignal!)
+* Fixed an issue where the `tap` APIServer would not refresh its certs
+  automatically when provided externally—like through cert-manager
+* Changed the proxy's cache eviction strategy to reduce memory consumption,
+  especially for busy HTTP/1.1 clients
+* Fixed an issue in the proxy's HTTP protocol detection which could cause false
+  positives for non-HTTP traffic
+* Increased the proxy's default dispatch timeout to 5 seconds to accommodate
+  connection pools which might open connections without immediately making a
+  request
+* Updated the proxy's Tokio dependency to v0.3
+
 ## edge-20.12.3
 
 This edge release is functionally the same as `edge-20.12.2`. It fixes an issue

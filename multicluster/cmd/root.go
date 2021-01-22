@@ -8,6 +8,7 @@ import (
 	"github.com/linkerd/linkerd2/pkg/charts/linkerd2"
 	"github.com/linkerd/linkerd2/pkg/healthcheck"
 	"github.com/linkerd/linkerd2/pkg/k8s"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,7 @@ var (
 	// special handling for Windows, on all other platforms these resolve to
 	// os.Stdout and os.Stderr, thanks to https://github.com/mattn/go-colorable
 	stdout = color.Output
+	stderr = color.Error
 
 	// These regexs are not as strict as they could be, but are a quick and dirty
 	// sanity check against illegal characters.
@@ -59,6 +61,14 @@ components on a cluster, manage credentials and link clusters together.`,
 
   # Extract mirroring cluster credentials from cluster A and install them on cluster B
   linkerd --context=cluster-a multicluster link --cluster-name=target | kubectl apply --context=cluster-b -f -`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if verbose {
+				log.SetLevel(log.DebugLevel)
+			} else {
+				log.SetLevel(log.PanicLevel)
+			}
+			return nil
+		},
 	}
 
 	multiclusterCmd.PersistentFlags().StringVarP(&controlPlaneNamespace, "linkerd-namespace", "L", defaultLinkerdNamespace, "Namespace in which Linkerd is installed")
@@ -71,6 +81,7 @@ components on a cluster, manage credentials and link clusters together.`,
 	multiclusterCmd.AddCommand(newLinkCommand())
 	multiclusterCmd.AddCommand(newUnlinkCommand())
 	multiclusterCmd.AddCommand(newMulticlusterInstallCommand())
+	multiclusterCmd.AddCommand(newCmdCheck())
 	multiclusterCmd.AddCommand(newMulticlusterUninstallCommand())
 	multiclusterCmd.AddCommand(newGatewaysCommand())
 	multiclusterCmd.AddCommand(newAllowCommand())

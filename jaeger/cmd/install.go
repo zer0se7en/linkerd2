@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -19,14 +18,12 @@ import (
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli/values"
 	"helm.sh/helm/v3/pkg/engine"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
 	templatesJaeger = []string{
 		"templates/namespace.yaml",
-		"templates/proxy-mutator.yaml",
+		"templates/jaeger-injector.yaml",
 		"templates/rbac.yaml",
 		"templates/tracing.yaml",
 	}
@@ -44,11 +41,20 @@ func newCmdInstall() *cobra.Command {
 		Example: `  # Default install.
   linkerd jaeger install | kubectl apply -f -
   # Install Jaeger extension into a non-default namespace.
-  linkerd jaeger install --namespace custom | kubectl apply -f -`,
+  linkerd jaeger install --namespace custom | kubectl apply -f -
+  
+The installation can be configured by using the --set, --values, --set-string and --set-file flags.
+A full list of configurable values can be found at https://www.github.com/linkerd/linkerd2/tree/main/jaeger/charts/jaeger/README.md
+  `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !skipChecks {
 				// Ensure there is a Linkerd installation.
-				exists, err := checkIfLinkerdExists(cmd.Context())
+				kubeAPI, err := k8s.NewAPI(kubeconfigPath, kubeContext, impersonate, impersonateGroup, 0)
+				if err != nil {
+					return err
+				}
+
+				exists, err := healthcheck.CheckIfLinkerdExists(cmd.Context(), kubeAPI, controlPlaneNamespace)
 				if err != nil {
 					return fmt.Errorf("could not check for Linkerd existence: %s", err)
 				}
@@ -148,29 +154,4 @@ func render(w io.Writer, valuesOverrides map[string]interface{}) error {
 
 	_, err = w.Write(buf.Bytes())
 	return err
-}
-
-func checkIfLinkerdExists(ctx context.Context) (bool, error) {
-	kubeAPI, err := k8s.NewAPI(kubeconfigPath, kubeContext, impersonate, impersonateGroup, 0)
-	if err != nil {
-		return false, err
-	}
-
-	_, err = kubeAPI.CoreV1().Namespaces().Get(ctx, controlPlaneNamespace, metav1.GetOptions{})
-	if err != nil {
-		if kerrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	_, _, err = healthcheck.FetchCurrentConfiguration(ctx, kubeAPI, controlPlaneNamespace)
-	if err != nil {
-		if kerrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
 }

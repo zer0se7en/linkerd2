@@ -8,6 +8,8 @@ A Helm chart for the jaeger add-on in Linkerd
 
 ## Requirements
 
+Kubernetes: `>=1.15.0-0`
+
 | Repository | Name | Version |
 |------------|------|---------|
 | file://../../../charts/partials | partials | 0.1.0 |
@@ -19,6 +21,7 @@ A Helm chart for the jaeger add-on in Linkerd
 | collector.image.name | string | `"omnition/opencensus-collector"` |  |
 | collector.image.pullPolicy | string | `"Always"` |  |
 | collector.image.version | string | `"0.1.11"` |  |
+| collector.jaegerAddr | string | `nil` | address of the jaeger backend to send traces to |
 | jaeger.image.name | string | `"jaegertracing/all-in-one"` |  |
 | jaeger.image.pullPolicy | string | `"Always"` |  |
 | jaeger.image.version | string | `"1.19.2"` |  |

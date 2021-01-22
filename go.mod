@@ -18,10 +18,11 @@ require (
 	github.com/go-openapi/spec v0.19.3
 	github.com/golang/protobuf v1.4.3
 	github.com/gorilla/websocket v1.4.0
+	github.com/grantae/certinfo v0.0.0-20170412194111-59d56a35515b
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/imdario/mergo v0.3.8
 	github.com/julienschmidt/httprouter v1.2.0
-	github.com/linkerd/linkerd2-proxy-api v0.1.15
+	github.com/linkerd/linkerd2-proxy-api v0.1.16
 	github.com/linkerd/linkerd2-proxy-init v1.3.8
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mattn/go-runewidth v0.0.4

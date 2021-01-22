@@ -12,10 +12,8 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/ptypes/duration"
-	"github.com/linkerd/linkerd2/controller/api/public"
 	healthcheckPb "github.com/linkerd/linkerd2/controller/gen/common/healthcheck"
 	configPb "github.com/linkerd/linkerd2/controller/gen/config"
-	pb "github.com/linkerd/linkerd2/controller/gen/public"
 	"github.com/linkerd/linkerd2/pkg/charts/linkerd2"
 	"github.com/linkerd/linkerd2/pkg/identity"
 	"github.com/linkerd/linkerd2/pkg/issuercerts"
@@ -51,9 +49,9 @@ func (hc *HealthChecker) addCheckAsCategory(
 	categoryID CategoryID,
 	desc string,
 ) {
-	testCategory := category{
+	testCategory := Category{
 		id:       testCategoryID,
-		checkers: []checker{},
+		checkers: []Checker{},
 	}
 
 	for _, cat := range hc.categories {
@@ -61,21 +59,22 @@ func (hc *HealthChecker) addCheckAsCategory(
 			for _, ch := range cat.checkers {
 				if ch.description == desc {
 					testCategory.checkers = append(testCategory.checkers, ch)
+					testCategory.enabled = true
 					break
 				}
 			}
 			break
 		}
 	}
-	hc.addCategory(testCategory)
+	hc.AppendCategories(testCategory)
 }
 
 func TestHealthChecker(t *testing.T) {
 	nullObserver := func(*CheckResult) {}
 
-	passingCheck1 := category{
+	passingCheck1 := Category{
 		id: "cat1",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "desc1",
 				check: func(context.Context) error {
@@ -84,11 +83,12 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
-	passingCheck2 := category{
+	passingCheck2 := Category{
 		id: "cat2",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "desc2",
 				check: func(context.Context) error {
@@ -97,11 +97,12 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
-	failingCheck := category{
+	failingCheck := Category{
 		id: "cat3",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "desc3",
 				check: func(context.Context) error {
@@ -110,64 +111,12 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
-	passingRPCClient := public.MockAPIClient{
-		SelfCheckResponseToReturn: &healthcheckPb.SelfCheckResponse{
-			Results: []*healthcheckPb.CheckResult{
-				{
-					SubsystemName:    "rpc1",
-					CheckDescription: "rpc desc1",
-					Status:           healthcheckPb.CheckStatus_OK,
-				},
-			},
-		},
-	}
-
-	passingRPCCheck := category{
-		id: "cat4",
-		checkers: []checker{
-			{
-				description: "desc4",
-				checkRPC: func(context.Context) (*healthcheckPb.SelfCheckResponse, error) {
-					return passingRPCClient.SelfCheck(context.Background(),
-						&healthcheckPb.SelfCheckRequest{})
-				},
-				retryDeadline: time.Time{},
-			},
-		},
-	}
-
-	failingRPCClient := public.MockAPIClient{
-		SelfCheckResponseToReturn: &healthcheckPb.SelfCheckResponse{
-			Results: []*healthcheckPb.CheckResult{
-				{
-					SubsystemName:         "rpc2",
-					CheckDescription:      "rpc desc2",
-					Status:                healthcheckPb.CheckStatus_FAIL,
-					FriendlyMessageToUser: "rpc error",
-				},
-			},
-		},
-	}
-
-	failingRPCCheck := category{
-		id: "cat5",
-		checkers: []checker{
-			{
-				description: "desc5",
-				checkRPC: func(context.Context) (*healthcheckPb.SelfCheckResponse, error) {
-					return failingRPCClient.SelfCheck(context.Background(),
-						&healthcheckPb.SelfCheckRequest{})
-				},
-				retryDeadline: time.Time{},
-			},
-		},
-	}
-
-	fatalCheck := category{
+	fatalCheck := Category{
 		id: "cat6",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "desc6",
 				fatal:       true,
@@ -177,11 +126,12 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
-	skippingCheck := category{
+	skippingCheck := Category{
 		id: "cat7",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "skip",
 				check: func(context.Context) error {
@@ -190,11 +140,12 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
-	skippingRPCCheck := category{
+	skippingRPCCheck := Category{
 		id: "cat8",
-		checkers: []checker{
+		checkers: []Checker{
 			{
 				description: "skipRpc",
 				checkRPC: func(context.Context) (*healthcheckPb.SelfCheckResponse, error) {
@@ -203,6 +154,7 @@ func TestHealthChecker(t *testing.T) {
 				retryDeadline: time.Time{},
 			},
 		},
+		enabled: true,
 	}
 
 	t.Run("Notifies observer of all results", func(t *testing.T) {
@@ -210,20 +162,15 @@ func TestHealthChecker(t *testing.T) {
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(passingCheck2)
-		hc.addCategory(failingCheck)
-		hc.addCategory(passingRPCCheck)
-		hc.addCategory(failingRPCCheck)
+
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(passingCheck2)
+		hc.AppendCategories(failingCheck)
 
 		expectedResults := []string{
 			"cat1 desc1",
 			"cat2 desc2",
 			"cat3 desc3: error",
-			"cat4 desc4",
-			"cat4 [rpc1] rpc desc1",
-			"cat5 desc5",
-			"cat5 [rpc2] rpc desc2: rpc error",
 		}
 
 		obs := newObserver()
@@ -239,9 +186,8 @@ func TestHealthChecker(t *testing.T) {
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(passingCheck2)
-		hc.addCategory(passingRPCCheck)
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(passingCheck2)
 
 		success := hc.RunChecks(nullObserver)
 
@@ -255,25 +201,9 @@ func TestHealthChecker(t *testing.T) {
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(failingCheck)
-		hc.addCategory(passingCheck2)
-
-		success := hc.RunChecks(nullObserver)
-
-		if success {
-			t.Fatalf("Expecting checks to not be successful, but got [%t]", success)
-		}
-	})
-
-	t.Run("Is not successful if one RPC check fails", func(t *testing.T) {
-		hc := NewHealthChecker(
-			[]CategoryID{},
-			&Options{},
-		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(failingRPCCheck)
-		hc.addCategory(passingCheck2)
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(failingCheck)
+		hc.AppendCategories(passingCheck2)
 
 		success := hc.RunChecks(nullObserver)
 
@@ -287,9 +217,9 @@ func TestHealthChecker(t *testing.T) {
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(fatalCheck)
-		hc.addCategory(passingCheck2)
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(fatalCheck)
+		hc.AppendCategories(passingCheck2)
 
 		expectedResults := []string{
 			"cat1 desc1",
@@ -308,9 +238,9 @@ func TestHealthChecker(t *testing.T) {
 		retryWindow = 0
 		returnError := true
 
-		retryCheck := category{
+		retryCheck := Category{
 			id: "cat7",
-			checkers: []checker{
+			checkers: []Checker{
 				{
 					description:   "desc7",
 					retryDeadline: time.Now().Add(100 * time.Second),
@@ -323,14 +253,15 @@ func TestHealthChecker(t *testing.T) {
 					},
 				},
 			},
+			enabled: true,
 		}
 
 		hc := NewHealthChecker(
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(retryCheck)
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(retryCheck)
 
 		observedResults := make([]string, 0)
 		observer := func(result *CheckResult) {
@@ -359,9 +290,9 @@ func TestHealthChecker(t *testing.T) {
 			[]CategoryID{},
 			&Options{},
 		)
-		hc.addCategory(passingCheck1)
-		hc.addCategory(skippingCheck)
-		hc.addCategory(skippingRPCCheck)
+		hc.AppendCategories(passingCheck1)
+		hc.AppendCategories(skippingCheck)
+		hc.AppendCategories(skippingRPCCheck)
 
 		expectedResults := []string{
 			"cat1 desc1",
@@ -570,7 +501,7 @@ metadata:
 			},
 			[]string{
 				"linkerd-config control plane Namespace exists",
-				"linkerd-config control plane ClusterRoles exist: missing ClusterRoles: linkerd-test-ns-controller, linkerd-test-ns-identity, linkerd-test-ns-proxy-injector, linkerd-test-ns-sp-validator, linkerd-test-ns-tap",
+				"linkerd-config control plane ClusterRoles exist: missing ClusterRoles: linkerd-test-ns-controller, linkerd-test-ns-identity, linkerd-test-ns-proxy-injector, linkerd-test-ns-sp-validator",
 			},
 		},
 		{
@@ -600,14 +531,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -617,14 +540,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -632,7 +547,7 @@ metadata:
 			[]string{
 				"linkerd-config control plane Namespace exists",
 				"linkerd-config control plane ClusterRoles exist",
-				"linkerd-config control plane ClusterRoleBindings exist: missing ClusterRoleBindings: linkerd-test-ns-controller, linkerd-test-ns-identity, linkerd-test-ns-proxy-injector, linkerd-test-ns-sp-validator, linkerd-test-ns-tap",
+				"linkerd-config control plane ClusterRoleBindings exist: missing ClusterRoleBindings: linkerd-test-ns-controller, linkerd-test-ns-identity, linkerd-test-ns-proxy-injector, linkerd-test-ns-sp-validator",
 			},
 		},
 		{
@@ -662,14 +577,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -679,14 +586,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -710,14 +609,6 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -727,14 +618,6 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -769,15 +652,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-prometheus
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-proxy-injector
   namespace: test-ns
   labels:
@@ -796,34 +670,7 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-grafana
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-heartbeat
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-web
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-tap
   namespace: test-ns
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -864,14 +711,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -881,14 +720,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -912,14 +743,6 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -929,14 +752,6 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -971,15 +786,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-prometheus
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-proxy-injector
   namespace: test-ns
   labels:
@@ -998,15 +804,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-grafana
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-heartbeat
   namespace: test-ns
   labels:
@@ -1017,15 +814,6 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: linkerd-web
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-tap
   namespace: test-ns
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1075,14 +863,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1092,14 +872,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1123,14 +895,6 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1140,14 +904,6 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1182,15 +938,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-prometheus
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-proxy-injector
   namespace: test-ns
   labels:
@@ -1209,15 +956,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-grafana
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-heartbeat
   namespace: test-ns
   labels:
@@ -1228,15 +966,6 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: linkerd-web
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-tap
   namespace: test-ns
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1295,14 +1024,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1312,14 +1033,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1343,14 +1056,6 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1360,14 +1065,6 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1402,15 +1099,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-prometheus
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-proxy-injector
   namespace: test-ns
   labels:
@@ -1429,15 +1117,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-grafana
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-heartbeat
   namespace: test-ns
   labels:
@@ -1448,15 +1127,6 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: linkerd-web
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-tap
   namespace: test-ns
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1524,14 +1194,6 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1541,14 +1203,6 @@ kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1572,14 +1226,6 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: linkerd-test-ns-prometheus
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
   name: linkerd-test-ns-proxy-injector
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1589,14 +1235,6 @@ kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: linkerd-test-ns-sp-validator
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: linkerd-test-ns-tap
   labels:
     linkerd.io/control-plane-ns: test-ns
 `,
@@ -1631,15 +1269,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-prometheus
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-proxy-injector
   namespace: test-ns
   labels:
@@ -1658,15 +1287,6 @@ metadata:
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: linkerd-grafana
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
   name: linkerd-heartbeat
   namespace: test-ns
   labels:
@@ -1677,15 +1297,6 @@ kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: linkerd-web
-  namespace: test-ns
-  labels:
-    linkerd.io/control-plane-ns: test-ns
-`,
-				`
-kind: ServiceAccount
-apiVersion: v1
-metadata:
-  name: linkerd-tap
   namespace: test-ns
   labels:
     linkerd.io/control-plane-ns: test-ns
@@ -1965,18 +1576,15 @@ func TestValidateControlPlanePods(t *testing.T) {
 		pods := []corev1.Pod{
 			pod("linkerd-controller-6f78cbd47-bc557", corev1.PodRunning, true),
 			pod("linkerd-grafana-5b7d796646-hh46d", corev1.PodRunning, true),
-			pod("linkerd-identity-6849948664-27982", corev1.PodRunning, true),
-			pod("linkerd-prometheus-74d6879cd6-bbdk6", corev1.PodRunning, true),
-			pod("linkerd-tap-6c878df6c8-2hmtd", corev1.PodFailed, false),
+			pod("linkerd-identity-6849948664-27982", corev1.PodFailed, true),
 			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, true),
-			pod("linkerd-web-98c9ddbcd-7b5lh", corev1.PodRunning, true),
 		}
 
 		err := validateControlPlanePods(pods)
 		if err == nil {
 			t.Fatal("Expected error, got nothing")
 		}
-		if err.Error() != "No running pods for \"linkerd-tap\"" {
+		if err.Error() != "No running pods for \"linkerd-identity\"" {
 			t.Fatalf("Unexpected error message: %s", err.Error())
 		}
 	})
@@ -1985,17 +1593,15 @@ func TestValidateControlPlanePods(t *testing.T) {
 		pods := []corev1.Pod{
 			pod("linkerd-controller-6f78cbd47-bc557", corev1.PodRunning, true),
 			pod("linkerd-identity-6849948664-27982", corev1.PodRunning, true),
-			pod("linkerd-prometheus-74d6879cd6-bbdk6", corev1.PodRunning, true),
 			pod("linkerd-tap-6c878df6c8-2hmtd", corev1.PodRunning, true),
-			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, true),
-			pod("linkerd-web-98c9ddbcd-7b5lh", corev1.PodRunning, false),
+			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, false),
 		}
 
 		err := validateControlPlanePods(pods)
 		if err == nil {
 			t.Fatal("Expected error, got nothing")
 		}
-		if err.Error() != "pod/linkerd-web-98c9ddbcd-7b5lh container web is not ready" {
+		if err.Error() != "pod/linkerd-sp-validator-24d2879ce6-cddk9 container sp is not ready" {
 			t.Fatalf("Unexpected error message: %s", err.Error())
 		}
 	})
@@ -2003,12 +1609,9 @@ func TestValidateControlPlanePods(t *testing.T) {
 	t.Run("Returns nil if all pods are running and all containers are ready", func(t *testing.T) {
 		pods := []corev1.Pod{
 			pod("linkerd-controller-6f78cbd47-bc557", corev1.PodRunning, true),
-			pod("linkerd-grafana-5b7d796646-hh46d", corev1.PodRunning, true),
 			pod("linkerd-identity-6849948664-27982", corev1.PodRunning, true),
-			pod("linkerd-prometheus-74d6879cd6-bbdk6", corev1.PodRunning, true),
 			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, true),
-			pod("linkerd-tap-6c878df6c8-2hmtd", corev1.PodRunning, true),
-			pod("linkerd-web-98c9ddbcd-7b5lh", corev1.PodRunning, true),
+			pod("linkerd-proxy-injector-5f79ff4844-", corev1.PodRunning, true),
 		}
 
 		err := validateControlPlanePods(pods)
@@ -2022,14 +1625,11 @@ func TestValidateControlPlanePods(t *testing.T) {
 			pod("linkerd-controller-6f78cbd47-bc557", corev1.PodRunning, true),
 			pod("linkerd-controller-6f78cbd47-bc558", corev1.PodRunning, false),
 			pod("linkerd-controller-6f78cbd47-bc559", corev1.PodFailed, false),
-			pod("linkerd-grafana-5b7d796646-hh46d", corev1.PodRunning, true),
 			pod("linkerd-identity-6849948664-27982", corev1.PodRunning, true),
 			pod("linkerd-identity-6849948664-27983", corev1.PodRunning, false),
 			pod("linkerd-identity-6849948664-27984", corev1.PodFailed, false),
-			pod("linkerd-tap-6c878df6c8-2hmtd", corev1.PodRunning, true),
-			pod("linkerd-prometheus-74d6879cd6-bbdk6", corev1.PodRunning, true),
+			pod("linkerd-proxy-injector-5f79ff4844-", corev1.PodRunning, true),
 			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, true),
-			pod("linkerd-web-98c9ddbcd-7b5lh", corev1.PodRunning, true),
 		}
 
 		err := validateControlPlanePods(pods)
@@ -2041,12 +1641,9 @@ func TestValidateControlPlanePods(t *testing.T) {
 	t.Run("Returns nil if all linkerd pods are running and pod list includes non-linkerd pod", func(t *testing.T) {
 		pods := []corev1.Pod{
 			pod("linkerd-controller-6f78cbd47-bc557", corev1.PodRunning, true),
-			pod("linkerd-grafana-5b7d796646-hh46d", corev1.PodRunning, true),
 			pod("linkerd-identity-6849948664-27982", corev1.PodRunning, true),
-			pod("linkerd-prometheus-74d6879cd6-bbdk6", corev1.PodRunning, true),
+			pod("linkerd-proxy-injector-5f79ff4844-", corev1.PodRunning, true),
 			pod("linkerd-sp-validator-24d2879ce6-cddk9", corev1.PodRunning, true),
-			pod("linkerd-tap-6c878df6c8-2hmtd", corev1.PodRunning, true),
-			pod("linkerd-web-98c9ddbcd-7b5lh", corev1.PodRunning, true),
 			pod("hello-43c25d", corev1.PodRunning, true),
 		}
 
@@ -2105,7 +1702,7 @@ func TestValidateDataPlaneNamespace(t *testing.T) {
 func TestValidateDataPlanePods(t *testing.T) {
 
 	t.Run("Returns an error if no inject pods were found", func(t *testing.T) {
-		err := validateDataPlanePods([]*pb.Pod{}, "emojivoto")
+		err := validateDataPlanePods([]corev1.Pod{}, "emojivoto")
 		if err == nil {
 			t.Fatal("Expected error, got nothing")
 		}
@@ -2115,11 +1712,55 @@ func TestValidateDataPlanePods(t *testing.T) {
 	})
 
 	t.Run("Returns an error if not all pods are running", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "emoji-d9c7866bb-7v74n", Status: "Running", ProxyReady: true},
-			{Name: "vote-bot-644b8cb6b4-g8nlr", Status: "Running", ProxyReady: true},
-			{Name: "voting-65b9fffd77-rlwsd", Status: "Failed", ProxyReady: false},
-			{Name: "web-6cfbccc48-5g8px", Status: "Running", ProxyReady: true},
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "emoji-d9c7866bb-7v74n"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vote-bot-644b8cb6b4-g8nlr"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "voting-65b9fffd77-rlwsd"},
+				Status: corev1.PodStatus{
+					Phase: "Failed",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: false,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "web-6cfbccc48-5g8px"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
 		}
 
 		err := validateDataPlanePods(pods, "emojivoto")
@@ -2132,8 +1773,19 @@ func TestValidateDataPlanePods(t *testing.T) {
 	})
 
 	t.Run("Does not return an error if the pod is Evicted", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "emoji-d9c7866bb-7v74n", Status: "Evicted", ProxyReady: true},
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "emoji-d9c7866bb-7v74n"},
+				Status: corev1.PodStatus{
+					Phase: "Evicted",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
 		}
 
 		err := validateDataPlanePods(pods, "emojivoto")
@@ -2143,11 +1795,55 @@ func TestValidateDataPlanePods(t *testing.T) {
 	})
 
 	t.Run("Returns an error if the proxy container is not ready", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "emoji-d9c7866bb-7v74n", Status: "Running", ProxyReady: true},
-			{Name: "vote-bot-644b8cb6b4-g8nlr", Status: "Running", ProxyReady: false},
-			{Name: "voting-65b9fffd77-rlwsd", Status: "Running", ProxyReady: true},
-			{Name: "web-6cfbccc48-5g8px", Status: "Running", ProxyReady: true},
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "emoji-d9c7866bb-7v74n"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vote-bot-644b8cb6b4-g8nlr"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: false,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "voting-65b9fffd77-rlwsd"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: false,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "web-6cfbccc48-5g8px"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
 		}
 
 		err := validateDataPlanePods(pods, "emojivoto")
@@ -2160,11 +1856,55 @@ func TestValidateDataPlanePods(t *testing.T) {
 	})
 
 	t.Run("Returns nil if all pods are running and all proxy containers are ready", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "emoji-d9c7866bb-7v74n", Status: "Running", ProxyReady: true},
-			{Name: "vote-bot-644b8cb6b4-g8nlr", Status: "Running", ProxyReady: true},
-			{Name: "voting-65b9fffd77-rlwsd", Status: "Running", ProxyReady: true},
-			{Name: "web-6cfbccc48-5g8px", Status: "Running", ProxyReady: true},
+		pods := []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "emoji-d9c7866bb-7v74n"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vote-bot-644b8cb6b4-g8nlr"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "voting-65b9fffd77-rlwsd"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "web-6cfbccc48-5g8px"},
+				Status: corev1.PodStatus{
+					Phase: "Running",
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  k8s.ProxyContainerName,
+							Ready: true,
+						},
+					},
+				},
+			},
 		}
 
 		err := validateDataPlanePods(pods, "emojivoto")
@@ -2173,43 +1913,6 @@ func TestValidateDataPlanePods(t *testing.T) {
 		}
 	})
 }
-
-func TestValidateDataPlanePodReporting(t *testing.T) {
-	t.Run("Returns success if no pods present", func(t *testing.T) {
-		err := validateDataPlanePodReporting([]*pb.Pod{})
-		if err != nil {
-			t.Fatalf("Unexpected error message: %s", err.Error())
-		}
-	})
-
-	t.Run("Returns success if all pods are added", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "ns1/test1", Added: true},
-			{Name: "ns2/test2", Added: true},
-		}
-
-		err := validateDataPlanePodReporting(pods)
-		if err != nil {
-			t.Fatalf("Unexpected error message: %s", err.Error())
-		}
-	})
-
-	t.Run("Returns an error if any of the pod was not added to Prometheus", func(t *testing.T) {
-		pods := []*pb.Pod{
-			{Name: "ns1/test1", Added: true},
-			{Name: "ns2/test2", Added: false},
-		}
-
-		err := validateDataPlanePodReporting(pods)
-		if err == nil {
-			t.Fatal("Expected error, got nothing")
-		}
-		if err.Error() != "Data plane metrics not found for ns2/test2." {
-			t.Fatalf("Unexpected error message: %s", err.Error())
-		}
-	})
-}
-
 func TestLinkerdPreInstallGlobalResourcesChecks(t *testing.T) {
 	hc := NewHealthChecker(
 		[]CategoryID{LinkerdPreInstallGlobalResourcesChecks},
@@ -2539,7 +2242,7 @@ data:
 }
 
 func TestFetchCurrentConfiguration(t *testing.T) {
-	defaultValues, err := linkerd2.NewValues(false)
+	defaultValues, err := linkerd2.NewValues()
 
 	if err != nil {
 		t.Fatalf("Unexpected error validating options: %v", err)
@@ -2568,8 +2271,6 @@ data:
     controllerImage: ControllerImage
     controllerReplicas: 1
     controllerUID: 2103
-    dashboard:
-      replicas: 1
     debugContainer: null
     destinationProxyResources: null
     destinationResources: null
@@ -2649,8 +2350,6 @@ data:
       proxyInjectAnnotation: ProxyInjectAnnotation
       proxyInjectDisabled: ProxyInjectDisabled
       workloadNamespaceLabel: WorkloadNamespaceLabel
-    grafana:
-      enabled: true
     heartbeatResources: null
     heartbeatSchedule: ""
     identityProxyResources: null
@@ -2659,37 +2358,26 @@ data:
     nodeSelector:
       beta.kubernetes.io/os: linux
     omitWebhookSideEffects: false
-    prometheus:
-      enabled: true
-      image: PrometheusImage
     proxyInjectorProxyResources: null
     proxyInjectorResources: null
     publicAPIProxyResources: null
     publicAPIResources: null
-    restrictDashboardPrivileges: false
     spValidatorProxyResources: null
     spValidatorResources: null
     stage: ""
-    tapProxyResources: null
-    tapResources: null
     tolerations: null
-    webImage: WebImage
-    webProxyResources: null
-    webResources: null
     webhookFailurePolicy: WebhookFailurePolicy
 `,
 			},
 			&linkerd2.Values{
-				ControllerImage:             "ControllerImage",
-				WebImage:                    "WebImage",
-				ControllerUID:               2103,
-				EnableH2Upgrade:             true,
-				WebhookFailurePolicy:        "WebhookFailurePolicy",
-				OmitWebhookSideEffects:      false,
-				RestrictDashboardPrivileges: false,
-				InstallNamespace:            true,
-				NodeSelector:                defaultValues.NodeSelector,
-				Tolerations:                 defaultValues.Tolerations,
+				ControllerImage:        "ControllerImage",
+				ControllerUID:          2103,
+				EnableH2Upgrade:        true,
+				WebhookFailurePolicy:   "WebhookFailurePolicy",
+				OmitWebhookSideEffects: false,
+				InstallNamespace:       true,
+				NodeSelector:           defaultValues.NodeSelector,
+				Tolerations:            defaultValues.Tolerations,
 				Global: &linkerd2.Global{
 					Namespace:                "Namespace",
 					ClusterDomain:            "cluster.local",
@@ -2747,14 +2435,6 @@ data:
 					},
 				},
 				ControllerReplicas: 1,
-				Dashboard: &linkerd2.Dashboard{
-					Replicas: 1,
-				},
-				Prometheus: linkerd2.Prometheus{
-					"enabled": true,
-					"image":   "PrometheusImage",
-				},
-				Grafana: defaultValues.Grafana,
 			},
 			nil,
 		},
@@ -2965,36 +2645,6 @@ func TestLinkerdIdentityCheckCertConfig(t *testing.T) {
 			tlsSecretScheme:  k8s.IdentityIssuerSchemeLinkerd,
 			schemeInConfig:   string(corev1.SecretTypeTLS),
 			expectedOutput:   []string{"linkerd-identity-test-cat certificate config is valid: key ca.crt containing the trust anchors needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=true"},
-		},
-		{
-			checkDescription: "does not get influenced by newline differences between trust anchors (missing newline in configMap)",
-			tlsSecretScheme:  string(corev1.SecretTypeTLS),
-			schemeInConfig:   string(corev1.SecretTypeTLS),
-			expectedOutput:   []string{"linkerd-identity-test-cat certificate config is valid"},
-			configMapIssuerDataModifier: func(issuerData issuercerts.IssuerCertData) issuercerts.IssuerCertData {
-				issuerData.TrustAnchors = strings.TrimSpace(issuerData.TrustAnchors)
-				return issuerData
-			},
-		},
-		{
-			checkDescription: "does not get influenced by newline differences between trust anchors (extra newline in configMap)",
-			tlsSecretScheme:  string(corev1.SecretTypeTLS),
-			schemeInConfig:   string(corev1.SecretTypeTLS),
-			expectedOutput:   []string{"linkerd-identity-test-cat certificate config is valid"},
-			configMapIssuerDataModifier: func(issuerData issuercerts.IssuerCertData) issuercerts.IssuerCertData {
-				issuerData.TrustAnchors = issuerData.TrustAnchors + "\n"
-				return issuerData
-			},
-		},
-		{
-			checkDescription: "does not get influenced by newline differences between trust anchors (missing newline in secret)",
-			tlsSecretScheme:  string(corev1.SecretTypeTLS),
-			schemeInConfig:   string(corev1.SecretTypeTLS),
-			expectedOutput:   []string{"linkerd-identity-test-cat certificate config is valid"},
-			tlsSecretIssuerDataModifier: func(issuerData issuercerts.IssuerCertData) issuercerts.IssuerCertData {
-				issuerData.TrustAnchors = strings.TrimSpace(issuerData.TrustAnchors)
-				return issuerData
-			},
 		},
 		{
 			checkDescription: "fails when trying to parse trust anchors from secret (extra newline in secret)",
@@ -3517,68 +3167,6 @@ func TestMinReplicaCheck(t *testing.T) {
 			if err != nil {
 				if err.Error() != tc.expected.Error() {
 					t.Logf("Expected error: %s\n", tc.expected)
-					t.Logf("Received error: %s\n", err)
-					t.Fatal("test case failed")
-				}
-			}
-		})
-	}
-}
-
-func TestGetString(t *testing.T) {
-	testCases := []struct {
-		i             interface{}
-		k             string
-		expected      string
-		expectedError error
-	}{
-		{
-			i: map[string]interface{}{
-				"key": "value",
-			},
-			k:             "key",
-			expected:      "value",
-			expectedError: nil,
-		},
-		{
-			i: map[string]interface{}{
-				"key": map[string]interface{}{
-					"key1": "value1",
-				},
-			},
-			k:             "key",
-			expected:      "",
-			expectedError: errors.New("config value 'map[key1:value1]' for key 'key' is not a string"),
-		},
-		{
-			i: map[string]interface{}{
-				"key": "value",
-			},
-			k:             "key1",
-			expected:      "",
-			expectedError: errorKeyNotFound,
-		},
-	}
-
-	for i, tc := range testCases {
-		tc := tc //pin
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			ans, err := GetString(tc.i, tc.k)
-
-			if ans != tc.expected {
-				t.Logf("Expected value: %s\n", tc.expected)
-				t.Logf("Received value: %s\n", ans)
-				t.Fatal("test case failed")
-			}
-
-			if err == nil && tc.expectedError != nil {
-				t.Log("Expected error: nil")
-				t.Logf("Received error: %s\n", err)
-				t.Fatal("test case failed")
-			}
-			if err != nil {
-				if err.Error() != tc.expectedError.Error() {
-					t.Logf("Expected error: %s\n", tc.expectedError)
 					t.Logf("Received error: %s\n", err)
 					t.Fatal("test case failed")
 				}

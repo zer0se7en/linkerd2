@@ -23,7 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sResource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
-	"sigs.k8s.io/yaml"
 )
 
 // makeInstallUpgradeFlags builds the set of flags which are used during the
@@ -54,12 +53,7 @@ func makeInstallUpgradeFlags(defaults *l5dcharts.Values) ([]flag.Flag, *pflag.Fl
 			func(values *l5dcharts.Values, value bool) error {
 				values.GetGlobal().HighAvailability = value
 				if value {
-					haValues, err := l5dcharts.NewValues(true)
-					if err != nil {
-						return err
-					}
-					*values, err = values.Merge(*haValues)
-					if err != nil {
+					if err := l5dcharts.MergeHAValues(values); err != nil {
 						return err
 					}
 				}
@@ -233,29 +227,6 @@ func makeAllStageFlags(defaults *l5dcharts.Values) ([]flag.Flag, *pflag.FlagSet)
 				values.GetGlobal().CNIEnabled = value
 				return nil
 			}),
-
-		flag.NewBoolFlag(allStageFlags, "restrict-dashboard-privileges", defaults.RestrictDashboardPrivileges,
-			"Restrict the Linkerd Dashboard's default privileges to disallow Tap and Check",
-			func(values *l5dcharts.Values, value bool) error {
-				values.RestrictDashboardPrivileges = value
-				return nil
-			}),
-
-		flag.NewStringFlag(allStageFlags, "config", "",
-			"A path to a yaml configuration file. The fields in this file will override the values used to install or upgrade Linkerd.",
-			func(values *l5dcharts.Values, value string) error {
-				if value != "" {
-					data, err := ioutil.ReadFile(value)
-					if err != nil {
-						return err
-					}
-					err = yaml.Unmarshal(data, &values)
-					if err != nil {
-						return err
-					}
-				}
-				return nil
-			}),
 	}
 
 	return flags, allStageFlags
@@ -329,7 +300,6 @@ func makeProxyFlags(defaults *l5dcharts.Values) ([]flag.Flag, *pflag.FlagSet) {
 
 		flag.NewStringFlag(proxyFlags, "registry", defaultDockerRegistry, "Docker registry to pull images from",
 			func(values *l5dcharts.Values, value string) error {
-				values.WebImage = registryOverride(values.WebImage, value)
 				values.ControllerImage = registryOverride(values.ControllerImage, value)
 				values.DebugContainer.Image.Name = registryOverride(values.DebugContainer.Image.Name, value)
 				values.GetGlobal().Proxy.Image.Name = registryOverride(values.GetGlobal().Proxy.Image.Name, value)

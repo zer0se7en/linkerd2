@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/linkerd/linkerd2/multicluster/static"
 	multicluster "github.com/linkerd/linkerd2/multicluster/values"
 	"github.com/linkerd/linkerd2/pkg/charts"
+	"github.com/linkerd/linkerd2/pkg/flags"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	mc "github.com/linkerd/linkerd2/pkg/multicluster"
 	"github.com/linkerd/linkerd2/pkg/version"
@@ -16,6 +19,8 @@ import (
 	"github.com/spf13/cobra"
 	chartloader "helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
+	valuespkg "helm.sh/helm/v3/pkg/cli/values"
+	"helm.sh/helm/v3/pkg/engine"
 	corev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,11 +42,14 @@ type (
 		controlPlaneVersion     string
 		dockerRegistry          string
 		selector                string
+		gatewayAddresses        string
 	}
 )
 
 func newLinkCommand() *cobra.Command {
 	opts, err := newLinkOptionsWithDefault()
+	var valuesOptions valuespkg.Options
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", err)
 		os.Exit(1)
@@ -51,6 +59,12 @@ func newLinkCommand() *cobra.Command {
 		Use:   "link",
 		Short: "Outputs resources that allow another cluster to mirror services from this one",
 		Args:  cobra.NoArgs,
+		Example: `  # To link the west cluster to east
+  linkerd --context=east multicluster link --cluster-name east | kubectl --context=west apply -f -
+
+The command can be configured by using the --set, --values, --set-string and --set-file flags.
+A full list of configurable values can be found at https://github.com/linkerd/linkerd2/blob/main/multicluster/charts/linkerd2-multicluster-link/README.md
+  `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 
 			if opts.clusterName == "" {
@@ -160,7 +174,8 @@ func newLinkCommand() *cobra.Command {
 				return err
 			}
 
-			gatewayAddresses := []string{}
+			gatewayAddresses := ""
+			gwAddresses := []string{}
 			for _, ingress := range gateway.Status.LoadBalancer.Ingress {
 				addr := ingress.IP
 				if addr == "" {
@@ -169,10 +184,14 @@ func newLinkCommand() *cobra.Command {
 				if addr == "" {
 					continue
 				}
-				gatewayAddresses = append(gatewayAddresses, addr)
+				gwAddresses = append(gwAddresses, addr)
 			}
-			if len(gatewayAddresses) == 0 {
+			if len(gwAddresses) == 0 && opts.gatewayAddresses == "" {
 				return fmt.Errorf("Gateway %s.%s has no ingress addresses", gateway.Name, gateway.Namespace)
+			} else if len(gwAddresses) > 0 {
+				gatewayAddresses = strings.Join(gwAddresses, ",")
+			} else {
+				gatewayAddresses = opts.gatewayAddresses
 			}
 
 			gatewayIdentity, ok := gateway.Annotations[k8s.GatewayIdentity]
@@ -202,7 +221,7 @@ func newLinkCommand() *cobra.Command {
 				TargetClusterDomain:           configMap.GetGlobal().ClusterDomain,
 				TargetClusterLinkerdNamespace: controlPlaneNamespace,
 				ClusterCredentialsSecret:      fmt.Sprintf("cluster-credentials-%s", opts.clusterName),
-				GatewayAddress:                strings.Join(gatewayAddresses, ","),
+				GatewayAddress:                gatewayAddresses,
 				GatewayPort:                   gatewayPort,
 				GatewayIdentity:               gatewayIdentity,
 				ProbeSpec:                     probeSpec,
@@ -236,17 +255,47 @@ func newLinkCommand() *cobra.Command {
 				{Name: "templates/gateway-mirror.yaml"},
 			}
 
-			chart := &charts.Chart{
-				Name:      helmMulticlusterLinkDefaultChartName,
-				Dir:       helmMulticlusterLinkDefaultChartName,
-				Namespace: controlPlaneNamespace,
-				RawValues: rawValues,
-				Files:     files,
-				Fs:        static.Templates,
+			// Load all multicluster link chart files into buffer
+			if err := charts.FilesReader(static.Templates, helmMulticlusterLinkDefaultChartName+"/", files); err != nil {
+				return err
 			}
-			serviceMirrorOut, err := chart.RenderNoPartials()
+
+			// Create a Chart obj from the files
+			chart, err := chartloader.LoadFiles(files)
 			if err != nil {
 				return err
+			}
+
+			// Store final Values generated from values.yaml and CLI flags
+			err = yaml.Unmarshal(rawValues, &chart.Values)
+			if err != nil {
+				return err
+			}
+
+			// Create values override
+			valuesOverrides, err := valuesOptions.MergeValues(nil)
+			if err != nil {
+				return err
+			}
+
+			vals, err := chartutil.CoalesceValues(chart, valuesOverrides)
+			if err != nil {
+				return err
+			}
+
+			// Attach the final values into the `Values` field for rendering to work
+			renderedTemplates, err := engine.Render(chart, map[string]interface{}{"Values": vals})
+			if err != nil {
+				return err
+			}
+
+			// Merge templates and inject
+			var serviceMirrorOut bytes.Buffer
+			for _, tmpl := range chart.Templates {
+				t := path.Join(chart.Metadata.Name, tmpl.Name)
+				if _, err := serviceMirrorOut.WriteString(renderedTemplates[t]); err != nil {
+					return err
+				}
 			}
 
 			stdout.Write(credsOut)
@@ -260,6 +309,7 @@ func newLinkCommand() *cobra.Command {
 		},
 	}
 
+	flags.AddValueOptionsFlags(cmd.Flags(), &valuesOptions)
 	cmd.Flags().StringVar(&opts.namespace, "namespace", defaultMulticlusterNamespace, "The namespace for the service account")
 	cmd.Flags().StringVar(&opts.clusterName, "cluster-name", "", "Cluster name")
 	cmd.Flags().StringVar(&opts.apiServerAddress, "api-server-address", "", "The api server address of the target cluster")
@@ -271,6 +321,7 @@ func newLinkCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.logLevel, "log-level", opts.logLevel, "Log level for the Multicluster components")
 	cmd.Flags().StringVar(&opts.dockerRegistry, "registry", opts.dockerRegistry, "Docker registry to pull service mirror controller image from")
 	cmd.Flags().StringVarP(&opts.selector, "selector", "l", opts.selector, "Selector (label query) to filter which services in the target cluster to mirror")
+	cmd.Flags().StringVar(&opts.gatewayAddresses, "gateway-addresses", opts.gatewayAddresses, "If specified overwrites gateway addresses when gateway service is not type LoadBalancer (comma separated list)")
 
 	return cmd
 }
@@ -288,6 +339,7 @@ func newLinkOptionsWithDefault() (*linkOptions, error) {
 		serviceMirrorRetryLimit: defaults.ServiceMirrorRetryLimit,
 		logLevel:                defaults.LogLevel,
 		selector:                k8s.DefaultExportedServiceSelector,
+		gatewayAddresses:        "",
 	}, nil
 }
 

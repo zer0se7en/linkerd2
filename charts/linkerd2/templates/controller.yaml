@@ -21,6 +21,24 @@ spec:
   - name: http
     port: 8085
     targetPort: 8085
+{{- if .Values.enablePodAntiAffinity }}
+---
+kind: PodDisruptionBudget
+apiVersion: policy/v1beta1
+metadata:
+  name: linkerd-controller-api
+  namespace: {{.Values.global.namespace}}
+  labels:
+    {{.Values.global.controllerComponentLabel}}: controller
+    {{.Values.global.controllerNamespaceLabel}}: {{.Values.global.namespace}}
+  annotations:
+    {{.Values.global.createdByAnnotation}}: {{default (printf "linkerd/helm %s" .Values.global.linkerdVersion) .Values.global.cliVersion}}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{.Values.global.controllerComponentLabel}}: controller
+{{- end }}
 ---
 {{- $tree := deepCopy . }}
 {{ $_ := set $tree.Values.global.proxy "workloadKind" "deployment" -}}
@@ -78,12 +96,8 @@ spec:
         - -destination-addr=linkerd-dst.{{.Values.global.namespace}}.svc.{{.Values.global.clusterDomain}}:8086
         - -controller-namespace={{.Values.global.namespace}}
         - -log-level={{.Values.global.controllerLogLevel}}
+        - -log-format={{.Values.global.controllerLogFormat}}
         - -cluster-domain={{.Values.global.clusterDomain}}
-        {{- if .Values.global.prometheusUrl }}
-        - -prometheus-url={{.Values.global.prometheusUrl}}
-        {{- else if .Values.prometheus.enabled }}
-        - -prometheus-url=http://linkerd-prometheus.{{.Values.global.namespace}}.svc.{{.Values.global.clusterDomain}}:9090
-        {{- end }}
         {{- include "partials.linkerd.trace" . | nindent 8 -}}
         image: {{.Values.controllerImage}}:{{default .Values.global.linkerdVersion .Values.global.controllerImageVersion}}
         imagePullPolicy: {{.Values.global.imagePullPolicy}}

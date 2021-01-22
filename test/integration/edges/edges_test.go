@@ -136,18 +136,18 @@ func TestDirectEdges(t *testing.T) {
 		// check edges
 		timeout := 50 * time.Second
 		err = TestHelper.RetryFor(timeout, func() error {
-			out, err = TestHelper.LinkerdRun("-n", testNamespace, "-o", "json", "edges", "deploy")
+			out, err = TestHelper.LinkerdRun("-n", testNamespace, "-o", "json", "viz", "edges", "deploy")
 			if err != nil {
 				return err
 			}
 
 			tpl := template.Must(template.ParseFiles("testdata/direct_edges.golden"))
 			vars := struct {
-				Ns        string
-				ControlNs string
+				Ns    string
+				VizNs string
 			}{
 				testNamespace,
-				TestHelper.GetLinkerdNamespace(),
+				TestHelper.GetVizNamespace(),
 			}
 			var buf bytes.Buffer
 			if err := tpl.Execute(&buf, vars); err != nil {

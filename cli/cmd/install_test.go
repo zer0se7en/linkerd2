@@ -11,6 +11,7 @@ import (
 	"github.com/linkerd/linkerd2/cli/flag"
 	charts "github.com/linkerd/linkerd2/pkg/charts/linkerd2"
 	"github.com/linkerd/linkerd2/pkg/tls"
+	"helm.sh/helm/v3/pkg/cli/values"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -30,17 +31,15 @@ func TestRender(t *testing.T) {
 	// A configuration that shows that all config setting strings are honored
 	// by `render()`.
 	metaValues := &charts.Values{
-		ControllerImage:             "ControllerImage",
-		WebImage:                    "WebImage",
-		ControllerUID:               2103,
-		EnableH2Upgrade:             true,
-		WebhookFailurePolicy:        "WebhookFailurePolicy",
-		OmitWebhookSideEffects:      false,
-		RestrictDashboardPrivileges: false,
-		InstallNamespace:            true,
-		Identity:                    defaultValues.Identity,
-		NodeSelector:                defaultValues.NodeSelector,
-		Tolerations:                 defaultValues.Tolerations,
+		ControllerImage:        "ControllerImage",
+		ControllerUID:          2103,
+		EnableH2Upgrade:        true,
+		WebhookFailurePolicy:   "WebhookFailurePolicy",
+		OmitWebhookSideEffects: false,
+		InstallNamespace:       true,
+		Identity:               defaultValues.Identity,
+		NodeSelector:           defaultValues.NodeSelector,
+		Tolerations:            defaultValues.Tolerations,
 		Global: &charts.Global{
 			Namespace:                "Namespace",
 			ClusterDomain:            "cluster.local",
@@ -49,6 +48,7 @@ func TestRender(t *testing.T) {
 			CliVersion:               "CliVersion",
 			ControllerComponentLabel: "ControllerComponentLabel",
 			ControllerLogLevel:       "ControllerLogLevel",
+			ControllerLogFormat:      "ControllerLogFormat",
 			ControllerImageVersion:   "ControllerImageVersion",
 			ControllerNamespaceLabel: "ControllerNamespaceLabel",
 			WorkloadNamespaceLabel:   "WorkloadNamespaceLabel",
@@ -126,15 +126,6 @@ func TestRender(t *testing.T) {
 		ControllerReplicas: 1,
 		ProxyInjector:      defaultValues.ProxyInjector,
 		ProfileValidator:   defaultValues.ProfileValidator,
-		Tap:                defaultValues.Tap,
-		Dashboard: &charts.Dashboard{
-			Replicas: 1,
-		},
-		Prometheus: charts.Prometheus{
-			"enabled": true,
-			"image":   "PrometheusImage",
-		},
-		Grafana: defaultValues.Grafana,
 	}
 
 	haValues, err := testInstallOptionsHA(true)
@@ -177,13 +168,6 @@ func TestRender(t *testing.T) {
 	withHeartBeatDisabledValues.DisableHeartBeat = true
 	addFakeTLSSecrets(withHeartBeatDisabledValues)
 
-	withRestrictedDashboardPrivilegesValues, err := testInstallOptions()
-	if err != nil {
-		t.Fatalf("Unexpected error: %v\n", err)
-	}
-	withRestrictedDashboardPrivilegesValues.RestrictDashboardPrivileges = true
-	addFakeTLSSecrets(withRestrictedDashboardPrivilegesValues)
-
 	withControlPlaneTracingValues, err := testInstallOptions()
 	if err != nil {
 		t.Fatalf("Unexpected error: %v\n", err)
@@ -217,28 +201,30 @@ func TestRender(t *testing.T) {
 	testCases := []struct {
 		values         *charts.Values
 		goldenFileName string
+		options        values.Options
 	}{
-		{defaultValues, "install_default.golden"},
-		{metaValues, "install_output.golden"},
-		{haValues, "install_ha_output.golden"},
-		{haWithOverridesValues, "install_ha_with_overrides_output.golden"},
-		{cniEnabledValues, "install_no_init_container.golden"},
-		{withProxyIgnoresValues, "install_proxy_ignores.golden"},
-		{withHeartBeatDisabledValues, "install_heartbeat_disabled_output.golden"},
-		{withRestrictedDashboardPrivilegesValues, "install_restricted_dashboard.golden"},
-		{withControlPlaneTracingValues, "install_controlplane_tracing_output.golden"},
-		{withCustomRegistryValues, "install_custom_registry.golden"},
-		{withCustomDestinationGetNetsValues, "install_default_override_dst_get_nets.golden"},
+		{defaultValues, "install_default.golden", values.Options{}},
+		{metaValues, "install_output.golden", values.Options{}},
+		{haValues, "install_ha_output.golden", values.Options{}},
+		{haWithOverridesValues, "install_ha_with_overrides_output.golden", values.Options{}},
+		{cniEnabledValues, "install_no_init_container.golden", values.Options{}},
+		{withProxyIgnoresValues, "install_proxy_ignores.golden", values.Options{}},
+		{withHeartBeatDisabledValues, "install_heartbeat_disabled_output.golden", values.Options{}},
+		{withControlPlaneTracingValues, "install_controlplane_tracing_output.golden", values.Options{}},
+		{withCustomRegistryValues, "install_custom_registry.golden", values.Options{}},
+		{withCustomDestinationGetNetsValues, "install_default_override_dst_get_nets.golden", values.Options{}},
+		{defaultValues, "install_custom_domain.golden", values.Options{Values: []string{"global.namespace=l5d"}}},
+		{defaultValues, "install_values_file.golden", values.Options{ValueFiles: []string{filepath.Join("testdata", "install_config.yaml")}}},
 	}
 
 	for i, tc := range testCases {
 		tc := tc // pin
 		t.Run(fmt.Sprintf("%d: %s", i, tc.goldenFileName), func(t *testing.T) {
 			var buf bytes.Buffer
-			if err := render(&buf, tc.values, ""); err != nil {
+			if err := render(&buf, tc.values, "", tc.options); err != nil {
 				t.Fatalf("Failed to render templates: %v", err)
 			}
-			diffTestdata(t, tc.goldenFileName, buf.String())
+			testDataDiffer.DiffTestdata(t, tc.goldenFileName, buf.String())
 		})
 	}
 }
@@ -307,9 +293,14 @@ func testInstallOptionsHA(ha bool) (*charts.Values, error) {
 }
 
 func testInstallOptionsNoCerts(ha bool) (*charts.Values, error) {
-	values, err := charts.NewValues(ha)
+	values, err := charts.NewValues()
 	if err != nil {
 		return nil, err
+	}
+	if ha {
+		if err = charts.MergeHAValues(values); err != nil {
+			return nil, err
+		}
 	}
 
 	values.GetGlobal().Proxy.Image.Version = installProxyVersion
@@ -321,7 +312,7 @@ func testInstallOptionsNoCerts(ha bool) (*charts.Values, error) {
 }
 
 func testInstallValues() (*charts.Values, error) {
-	values, err := charts.NewValues(false)
+	values, err := charts.NewValues()
 	if err != nil {
 		return nil, err
 	}
@@ -551,7 +542,4 @@ func addFakeTLSSecrets(values *charts.Values) {
 	values.ProfileValidator.CrtPEM = "profile validator crt"
 	values.ProfileValidator.KeyPEM = "profile validator key"
 	values.ProfileValidator.CaBundle = "profile validator CA bundle"
-	values.Tap.CrtPEM = "tap crt"
-	values.Tap.KeyPEM = "tap key"
-	values.Tap.CaBundle = "tap CA bundle"
 }

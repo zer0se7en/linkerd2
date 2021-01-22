@@ -31,6 +31,8 @@ const (
 	targetServiceNamespace = "target_service_namespace"
 )
 
+const endpointTargetRefPod = "Pod"
+
 // TODO: prom metrics for all the queues/caches
 // https://github.com/linkerd/linkerd2/issues/2204
 
@@ -128,6 +130,8 @@ type (
 )
 
 var endpointsVecs = newEndpointsMetricsVecs()
+
+var undefinedEndpointPort = Port(0)
 
 // NewEndpointsWatcher creates an EndpointsWatcher and begins watching the
 // k8sAPI for pod, service, and endpoint changes. An EndpointsWatcher will
@@ -704,11 +708,17 @@ func metricLabels(resource interface{}) map[string]string {
 }
 
 func (pp *portPublisher) endpointSliceToAddresses(es *discovery.EndpointSlice) AddressSet {
-	addresses := make(map[ID]Address)
-	resolvedPort := pp.resolveESTargetPort(es.Ports)
-	if resolvedPort == Port(0) {
-		return AddressSet{}
+	addressSet := AddressSet{
+		TopologicalPref: pp.TopologyPref,
+		Labels:          metricLabels(es),
+		Addresses:       make(map[ID]Address),
 	}
+
+	resolvedPort := pp.resolveESTargetPort(es.Ports)
+	if resolvedPort == undefinedEndpointPort {
+		return addressSet
+	}
+
 	serviceID, err := getEndpointSliceServiceID(es)
 	if err != nil {
 		pp.log.Errorf("Could not fetch resource service name:%v", err)
@@ -739,13 +749,13 @@ func (pp *portPublisher) endpointSliceToAddresses(es *discovery.EndpointSlice) A
 					address.TopologyLabels[k] = v
 				}
 
-				addresses[id] = address
+				addressSet.Addresses[id] = address
 			}
 
 			continue
 		}
 
-		if endpoint.TargetRef.Kind == "Pod" {
+		if endpoint.TargetRef.Kind == endpointTargetRefPod {
 			for _, IPAddr := range endpoint.Addresses {
 				address, id, err := pp.newPodRefAddress(resolvedPort, IPAddr, endpoint.TargetRef.Name, endpoint.TargetRef.Namespace)
 				if err != nil {
@@ -757,17 +767,13 @@ func (pp *portPublisher) endpointSliceToAddresses(es *discovery.EndpointSlice) A
 					address.TopologyLabels[k] = v
 				}
 
-				addresses[id] = address
+				addressSet.Addresses[id] = address
 			}
 		}
 
 	}
 
-	return AddressSet{
-		Addresses:       addresses,
-		Labels:          metricLabels(es),
-		TopologicalPref: pp.TopologyPref,
-	}
+	return addressSet
 }
 
 func (pp *portPublisher) endpointsToAddresses(endpoints *corev1.Endpoints) AddressSet {
@@ -793,11 +799,15 @@ func (pp *portPublisher) endpointsToAddresses(endpoints *corev1.Endpoints) Addre
 				continue
 			}
 
-			if endpoint.TargetRef.Kind == "Pod" {
+			if endpoint.TargetRef.Kind == endpointTargetRefPod {
 				address, id, err := pp.newPodRefAddress(resolvedPort, endpoint.IP, endpoint.TargetRef.Name, endpoint.TargetRef.Namespace)
 				if err != nil {
 					pp.log.Errorf("Unable to create new address:%v", err)
 					continue
+				}
+				err = SetPodOpaquePortAnnotation(pp.k8sAPI, address.Pod, endpoints.Namespace)
+				if err != nil {
+					pp.log.Errorf("failed to set opaque port annotation on pod: %s", err)
 				}
 				addresses[id] = address
 			}
@@ -847,7 +857,7 @@ func (pp *portPublisher) newPodRefAddress(endpointPort Port, endpointIP, podName
 
 func (pp *portPublisher) resolveESTargetPort(slicePorts []discovery.EndpointPort) Port {
 	if slicePorts == nil {
-		return Port(0)
+		return undefinedEndpointPort
 	}
 
 	switch pp.targetPort.Type {
@@ -860,7 +870,7 @@ func (pp *portPublisher) resolveESTargetPort(slicePorts []discovery.EndpointPort
 			}
 		}
 	}
-	return Port(0)
+	return undefinedEndpointPort
 }
 
 func (pp *portPublisher) resolveTargetPort(subset corev1.EndpointSubset) Port {
@@ -874,7 +884,7 @@ func (pp *portPublisher) resolveTargetPort(subset corev1.EndpointSubset) Port {
 			}
 		}
 	}
-	return Port(0)
+	return undefinedEndpointPort
 }
 
 func (pp *portPublisher) updatePort(targetPort namedPort) {
@@ -1080,4 +1090,23 @@ func isValidSlice(es *discovery.EndpointSlice) bool {
 	}
 
 	return true
+}
+
+// SetPodOpaquePortAnnotation ensures that if there is no opaque port
+// annotation on the pod, then it inherits the annotation from the namespace.
+// If there is also no annotation on the namespace, then it remains unset.
+func SetPodOpaquePortAnnotation(k8sAPI *k8s.API, pod *corev1.Pod, ns string) error {
+	if _, ok := pod.Annotations[consts.ProxyOpaquePortsAnnotation]; !ok {
+		ns, err := k8sAPI.NS().Lister().Get(ns)
+		if err != nil {
+			return fmt.Errorf("failed to get namespace annotation: %s", err)
+		}
+		if annotation, ok := ns.Annotations[consts.ProxyOpaquePortsAnnotation]; ok {
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			pod.Annotations[consts.ProxyOpaquePortsAnnotation] = annotation
+		}
+	}
+	return nil
 }
