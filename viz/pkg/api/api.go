@@ -25,7 +25,6 @@ func CheckClientOrExit(hcOptions healthcheck.Options) pb.ApiClient {
 func CheckClientOrRetryOrExit(hcOptions healthcheck.Options, apiChecks bool) pb.ApiClient {
 	checks := []healthcheck.CategoryID{
 		healthcheck.KubernetesAPIChecks,
-		vizHealthCheck.LinkerdVizExtensionCheck,
 	}
 
 	if apiChecks {
@@ -34,13 +33,15 @@ func CheckClientOrRetryOrExit(hcOptions healthcheck.Options, apiChecks bool) pb.
 
 	hc := vizHealthCheck.NewHealthChecker(checks, &hcOptions)
 
+	hc.AppendCategories(hc.VizCategory())
+
 	hc.RunChecks(exitOnError)
 	return hc.VizAPIClient()
 }
 
 func exitOnError(result *healthcheck.CheckResult) {
 	if result.Retry {
-		fmt.Fprintln(os.Stderr, "Waiting for control plane to become available")
+		fmt.Fprintln(os.Stderr, "Waiting for linkerd-viz extension to become available")
 		return
 	}
 
