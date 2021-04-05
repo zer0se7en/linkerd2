@@ -5,7 +5,6 @@ on:
     - "*"
 env:
   GH_ANNOTATION: true
-  DOCKER_BUILDKIT: 1
 jobs:
   docker_build:
     runs-on: ubuntu-20.04
@@ -102,10 +101,11 @@ jobs:
         - deep
         - external-issuer
         - external-prometheus-deep
+        - external-resources
         - helm-deep
         - helm-upgrade
         - uninstall
-        #- upgrade-edge
+        - upgrade-edge
         - upgrade-stable
         - cni-calico-deep
     needs: [docker_build]
@@ -257,8 +257,8 @@ jobs:
         prerelease: false
         body_path: NOTES.md
         files: |
-          ./target/release/linkerd2-cli-*-darwin
-          ./target/release/linkerd2-cli-*-darwin.sha256
+          ./target/release/linkerd2-cli-*-darwin*
+          ./target/release/linkerd2-cli-*-darwin*.sha256
           ./target/release/linkerd2-cli-*-linux-*
           ./target/release/linkerd2-cli-*-linux-*.sha256
           ./target/release/linkerd2-cli-*-windows.exe

@@ -42,8 +42,6 @@ func TestMain(m *testing.M) {
 //////////////////////
 
 func TestTracing(t *testing.T) {
-	t.Skip(`Temporarily skipped while we figure why it keeps on failing, only in CI ¯\_(ツ)_/¯`)
-
 	ctx := context.Background()
 	if os.Getenv("RUN_ARM_TEST") != "" {
 		t.Skip("Skipped. Jaeger & Open Census images does not support ARM yet")
@@ -164,10 +162,6 @@ func TestTracing(t *testing.T) {
 			} else {
 				testutil.AnnotatedError(t, "CheckPods timed-out", err)
 			}
-		}
-
-		if err := TestHelper.CheckDeployment(ctx, deploy.ns, deploy.name, 1); err != nil {
-			testutil.AnnotatedErrorf(t, "CheckDeployment timed-out", "Error validating deployment [%s]:\n%s", deploy.name, err)
 		}
 	}
 

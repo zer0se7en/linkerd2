@@ -1,5 +1,224 @@
 # Changes
 
+## edge-21.4.1
+
+This is a release candidate for `stable-2.10.1`!
+
+This includes several fixes for the core installation as well the Multicluster,
+Jaeger, and Viz extensions. There are two significant proxy fixes that address
+TLS detection and admin server failures.
+
+Thanks to all our 2.10 users who helped discover these issues!
+
+* Fixed TCP read and write bytes/sec calculations to group by label based off
+  inbound or outbound traffic
+* Updated dashboard build to use webpack v5
+* Modified the proxy-injector to add the opaque ports annotation to pods if
+  their namespace has it set
+* Added CA certs to the Viz extension's `metrics-api` container so that it can
+  validate the certifcate of an external Prometheus
+* Fixed an issue where inbound TLS detection from non-meshed workloads could
+  break
+* Fixed an issue where the admin server's HTTP detection would fail and not
+  recover; these are now handled gracefully and without logging warnings
+* Aligned the Helm installation heartbeat schedule to match that of the CLI
+* Fixed an issue with Multicluster's serivce mirror where it's endpoint repair
+  retries were not properly rate limited
+* Removed components from the control plane dashboard that now are part of the
+  Viz extension
+* Fixed components in the Jaeger extension to set the correct Prometheus scrape
+  values
+
+## edge-21.3.4
+
+This release fixes some issues around publishing of CLI binary
+for Apple Silicon M1 Chips. This release also includes some fixes and
+improvements to the dashboard, destination, and the CLI.
+
+* Fixed an issue where the topology graph in the dashboard was no longer
+  draggable
+* Updated the IP Watcher in destination to ignore pods in "Terminating" state
+  (thanks @Wenliang-CHEN!)
+* Added `installNamespace` toggle in the jaeger extension's install.
+  (thanks @jijeesh!)
+* Updated `healthcheck` pkg to have `hintBaseURL` configurable, useful
+  for external extensions using that pkg
+* Added multi-arch support for RabbitMQ integration tests (thanks @barkardk!)
+
+## edge-21.3.3
+
+This release includes various bug fixes and improvements to the CLI, the
+identity and destination control plane components as well as the proxy. This
+release also ships with a new CLI binary for Apple Silicon M1 chips.
+
+* Added new RabbitMQ integration tests (thanks @barkardk!)
+* Updated the Go version to 1.16.2
+* Fixed an issue where the `linkerd identity` command returned the root
+  certificate of a pod instead of its leaf certificate
+* Fixed an issue where the destination service would respond with too big of a
+  header and result in http2 protocol errors
+* Updated the release process to build Linkerd CLI binaries for Apple Silicon
+  M1 chips
+* Improved error messaging when trying to install Linkerd on a cluster that
+  already had Linkerd installed
+* Fixed an issue where the `destination` control plane component sometimes
+  returned endpoint addresses with a `0` port number while pods were
+  undergoing a rollout (thanks @riccardofreixo!)
+* Added a loading spinner to the `linkerd check` command when running extension
+  checks
+* Fixed an issue where pod lookups by host IP and host port fail even though
+  the cluster has a matching pod
+* Control plane proxies no longer emit warnings about the resolution stream
+  ending. This error was innocuous.
+* Fixed an issue where proxies could infinitely retry failed requests to the
+  `destination` controller when it returned a `FailedPrecondition`
+* The proxy's logging infrastructure has been updated to reduce memory pressure
+  in high-connection environments.
+
+## stable-2.10.0
+
+This release introduces Linkerd extensions. The default control plane no longer
+includes Prometheus, Grafana, the dashboard, or several other components that
+previously shipped by default.  This results in a much smaller and simpler set
+of core functionalities.  Visibility and metrics functionality is now available
+in the Viz extension under the `linkerd viz` command.  Cross-cluster
+communication functionality is now available in the Multicluster extension
+under the `linkerd multicluster` command.  Distributed tracing functionality is
+now available in the Jaeger extension under the `linkerd jaeger` command.
+
+This release also introduces the ability to mark certain ports as "opaque",
+indicating that the proxy should treat the traffic as opaque TCP instead of
+attempting protocol detection.  This allows the proxy to provide TCP metrics
+and mTLS for server-speaks-first protocols.  It also enables support for
+TCP traffic in the Multicluster extension.
+
+**Upgrade notes**: Please see the [upgrade
+instructions](https://linkerd.io/2/tasks/upgrade/#upgrade-notice-stable-2100).
+
+* Proxy
+  * Updated the proxy to use TLS version 1.3; support for TLS 1.2 remains
+    enabled for compatibility with prior proxy versions
+  * Improved support for server-speaks-first protocols by allowing ports to be
+    marked as opaque, causing the proxy to skip protocol detection.  Ports can
+    be marked as opaque by setting the `config.linkerd.io/opaque-ports`
+    annotation on the Pod and Service or by using the `--opaque-ports` flag with
+    `linkerd inject`
+  * Ports `25,443,587,3306,5432,11211` have been removed from the default skip
+    ports; all traffic through those ports is now proxied and handled opaquely
+    by default
+  * Fixed an issue that could cause proxies in "ingress mode"
+    (`linkerd.io/inject: ingress`) to use an excessive amount of memory
+  * Improved diagnostic logging around "fail fast" and "max-concurrency
+    exhausted" error messages
+  * Added a new `/shutdown` admin endpoint that may only be accessed over the
+    loopback network allowing batch jobs to gracefully terminate the proxy on
+    completion
+
+* Control Plane
+  * Removed all components and functionality related to visibility, tracing,
+    or multicluster.  These have been moved into extensions
+  * Changed the identity controller to receive the trust anchor via environment
+    variable instead of by flag; this allows the certificate to be loaded from a
+    config map or secret (thanks @mgoltzsche!)
+  * Added PodDisruptionBudgets to the control plane components so that they
+    cannot be all terminated at the same time during disruptions
+    (thanks @tustvold!)
+
+* CLI
+  * Changed the `check` command to include each installed extension's `check`
+    output; this allows users to check for proper configuration and installation
+    of Linkerd without running a command for each extension
+  * Moved the `metrics`, `endpoints`, and `install-sp` commands into subcommands
+    under the `diagnostics` command
+  * Added an `--opaque-ports` flag to `linkerd inject` to easily mark ports
+    as opaque.
+  * Added the `repair` command which will repopulate resources needed for
+    properly upgrading a Linkerd installation
+  * Added Helm-style `set`, `set-string`, `values`, `set-files` customization
+    flags for the `linkerd install` and `linkerd upgrade` commands
+  * Introduced the `linkerd identity` command, used to fetch the TLS certificates
+    for injected pods (thanks @jimil749)
+  * Removed the `get` and `logs` command from the CLI
+
+* Helm
+  * Changed many Helm values, please see the upgrade notes
+
+* Viz
+  * Introduced the `linkerd viz` subcommand which contains commands for
+    installing the viz extension and all visibility commands
+  * Updated the Web UI to only display the "Gateway" sidebar link when the
+    multicluster extension is active
+  * Added a `linkerd viz list` command to list pods with tap enabled
+  * Fixed an issue where the `tap` APIServer would not refresh its certs
+    automatically when provided externally—like through cert-manager
+
+* Multicluster
+  * Introduced the `linkerd multicluster` subcommand which contains commands for
+    installing the multicluster extension and all multicluster commands
+  * Added support for cross-cluster TCP traffic
+  * Updated the service mirror controller to copy the
+    `config.linkerd.io/opaque-ports` annotation when mirroring services so that
+    cross-cluster traffic can be correctly handled as opaque
+  * Added support for multicluster gateways of types other than LoadBalancer
+    (thanks @DaspawnW!)
+
+* Jaeger
+  * Introduced the `linkerd jaeger` subcommand which contains commands for
+    installing the jaeger extension and all tracing commands
+  * Added a `linkerd jaeger list` command to list pods with tracing enabled
+
+This release includes changes from a massive list of contributors. A special
+thank-you to everyone who helped make this release possible:
+[Lutz Behnke](https://github.com/cypherfox)
+[Björn Wenzel](https://github.com/DaspawnW)
+[Filip Petkovski](https://github.com/fpetkovski)
+[Simon Weald](https://github.com/glitchcrab)
+[GMarkfjard](https://github.com/GMarkfjard)
+[hodbn](https://github.com/hodbn)
+[Hu Shuai](https://github.com/hs0210)
+[Jimil Desai](https://github.com/jimil749)
+[jiraguha](https://github.com/jiraguha)
+[Joakim Roubert](https://github.com/joakimr-axis)
+[Josh Soref](https://github.com/jsoref)
+[Kelly Campbell](https://github.com/kellycampbell)
+[Matei David](https://github.com/mateiidavid)
+[Mayank Shah](https://github.com/mayankshah1607)
+[Max Goltzsche](https://github.com/mgoltzsche)
+[Mitch Hulscher](https://github.com/mhulscher)
+[Eugene Formanenko](https://github.com/mo4islona)
+[Nathan J Mehl](https://github.com/n-oden)
+[Nicolas Lamirault](https://github.com/nlamirault)
+[Oleh Ozimok](https://github.com/oleh-ozimok)
+[Piyush Singariya](https://github.com/piyushsingariya)
+[Naga Venkata Pradeep Namburi](https://github.com/pradeepnnv)
+[rish-onesignal](https://github.com/rish-onesignal)
+[Shai Katz](https://github.com/shaikatz)
+[Takumi Sue](https://github.com/tkms0106)
+[Raphael Taylor-Davies](https://github.com/tustvold)
+[Yashvardhan Kukreja](https://github.com/yashvardhan-kukreja)
+
+## edge-21.3.2
+
+This edge release is another release candidate for stable 2.10 and fixes some
+final bugs found in testing. A big thank you to users who have helped us
+identity these issues!
+
+* Fixed an issue with the service profile validating webhook that prevented
+  service profiles from being added or updated
+* Updated the `check` command output hint anchors to match Linkerd component
+  names
+* Fixed a permission issue with the Viz extension's tap admin cluster role by
+  adding namespace listing to the allowed actions
+* Fixed an issue with the proxy where connections would not be torn down when
+  communicating with a defunct endpoint
+* Improved diagnostic logging in the proxy
+* Fixed an issue with the Viz extension's Prometheus template that prevented
+  users from specifying a log level flag for that component (thanks @n-oden!)
+* Fixed a template parsing issue that prevented users from specifying additional
+  ignored inbound parts through Helm's `--set` flag
+* Fixed an issue with the proxy where non-HTTP streams could sometimes hang due
+  to TLS buffering
+
 ## edge-21.3.1
 
 This edge release is another release candidate, bringing us closer to
