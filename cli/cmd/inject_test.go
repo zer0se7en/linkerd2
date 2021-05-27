@@ -95,6 +95,9 @@ func TestUninjectAndInject(t *testing.T) {
 	opaquePortsConfig := defaultConfig()
 	opaquePortsConfig.Proxy.OpaquePorts = "3000,5000-6000,mysql"
 
+	ingressConfig := defaultConfig()
+	ingressConfig.Proxy.IsIngress = true
+
 	proxyIgnorePortsConfig := defaultConfig()
 	proxyIgnorePortsConfig.ProxyInit.IgnoreInboundPorts = "22,8100-8102"
 	proxyIgnorePortsConfig.ProxyInit.IgnoreOutboundPorts = "5432"
@@ -298,6 +301,13 @@ func TestUninjectAndInject(t *testing.T) {
 			reportFileName:   "inject_emojivoto_deployment_opaque_ports.report",
 			injectProxy:      true,
 			testInjectConfig: opaquePortsConfig,
+		},
+		{
+			inputFileName:    "inject_emojivoto_pod.input.yml",
+			goldenFileName:   "inject_emojivoto_pod_ingress.golden.yml",
+			reportFileName:   "inject_emojivoto_pod_ingress.report",
+			injectProxy:      true,
+			testInjectConfig: ingressConfig,
 		},
 	}
 
@@ -610,6 +620,7 @@ func TestProxyConfigurationAnnotations(t *testing.T) {
 	values.Proxy.Resources.Memory.Request = "10Mi"
 	values.Proxy.Resources.Memory.Limit = "50Mi"
 	values.Proxy.WaitBeforeExitSeconds = 10
+	values.Proxy.Await = false
 
 	expectedOverrides := map[string]string{
 		k8s.ProxyIgnoreInboundPortsAnnotation:  "8500-8505",
@@ -629,6 +640,7 @@ func TestProxyConfigurationAnnotations(t *testing.T) {
 		k8s.ProxyMemoryRequestAnnotation:          "10Mi",
 		k8s.ProxyMemoryLimitAnnotation:            "50Mi",
 		k8s.ProxyWaitBeforeExitSecondsAnnotation:  "10",
+		k8s.ProxyAwait:                            "disabled",
 	}
 
 	overrides := getOverrideAnnotations(values, baseValues)

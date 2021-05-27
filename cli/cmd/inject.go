@@ -201,7 +201,7 @@ func (rt resourceTransformerInject) transform(bytes []byte) ([]byte, []inject.Re
 		// prevents injector from taking a different code path in the ignress mode
 		delete(rt.overrideAnnotations, k8s.ProxyInjectAnnotation)
 		conf.AppendPodAnnotation(k8s.CreatedByAnnotation, k8s.CreatedByAnnotationValue())
-	} else {
+	} else if !rt.values.Proxy.IsIngress { // Add enabled annotation only if its not ingress mode to prevent overriding the annotation
 		// flag the auto-injector to inject the proxy, regardless of the namespace annotation
 		conf.AppendPodAnnotation(k8s.ProxyInjectAnnotation, k8s.ProxyInjectEnabled)
 	}
@@ -476,6 +476,14 @@ func getOverrideAnnotations(values *charts.Values, base *charts.Values) map[stri
 	}
 	if proxy.WaitBeforeExitSeconds != baseProxy.WaitBeforeExitSeconds {
 		overrideAnnotations[k8s.ProxyWaitBeforeExitSecondsAnnotation] = uintToString(proxy.WaitBeforeExitSeconds)
+	}
+
+	if proxy.Await != baseProxy.Await {
+		if proxy.Await {
+			overrideAnnotations[k8s.ProxyAwait] = k8s.Enabled
+		} else {
+			overrideAnnotations[k8s.ProxyAwait] = k8s.Disabled
+		}
 	}
 
 	// Set fields that can't be converted into annotations

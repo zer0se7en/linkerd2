@@ -9,7 +9,6 @@ require (
 	github.com/clarketm/json v1.13.4
 	github.com/containernetworking/cni v0.6.1-0.20180218032124-142cde0c766c
 	github.com/elazarl/goproxy v0.0.0-20190711103511-473e67f1d7d2 // indirect
-	github.com/elazarl/goproxy/ext v0.0.0-20190711103511-473e67f1d7d2 // indirect
 	github.com/emicklei/proto v1.6.8
 	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/fatih/color v1.9.0
@@ -17,13 +16,13 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-openapi/spec v0.19.3
 	github.com/golang/protobuf v1.4.3
-	github.com/gorilla/websocket v1.4.0
+	github.com/gorilla/websocket v1.4.2
 	github.com/grantae/certinfo v0.0.0-20170412194111-59d56a35515b
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/imdario/mergo v0.3.8
 	github.com/julienschmidt/httprouter v1.2.0
 	github.com/linkerd/linkerd2-proxy-api v0.1.16
-	github.com/linkerd/linkerd2-proxy-init v1.3.9
+	github.com/linkerd/linkerd2-proxy-init v1.3.12
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mattn/go-runewidth v0.0.4
 	github.com/nsf/termbox-go v0.0.0-20180613055208-5c94acc5e6eb
@@ -37,7 +36,7 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749 // indirect
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/sirupsen/logrus v1.7.0
-	github.com/spf13/cobra v1.0.0
+	github.com/spf13/cobra v1.1.3
 	github.com/spf13/pflag v1.0.5
 	go.opencensus.io v0.22.2
 	golang.org/x/net v0.0.0-20200707034311-ab3426394381

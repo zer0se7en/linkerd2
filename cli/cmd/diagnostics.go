@@ -26,17 +26,13 @@ This command provides subcommands to diagnose the functionality of Linkerd.`,
   linkerd diagnostics proxy-metrics -n emojivoto deploy/web
  
   # Get the endpoints for authorities in Linkerd's control-plane itself
-  linkerd diagnostics endpoints linkerd-controller-api.linkerd.svc.cluster.local:8085
-
-  # Install service profiles for the control-plane components.
-  linkerd diagnostics install-sp
+  linkerd diagnostics endpoints web.linkerd-viz.svc.cluster.local:8084
   `,
 	}
 
 	diagnosticsCmd.AddCommand(newCmdControllerMetrics())
 	diagnosticsCmd.AddCommand(newCmdEndpoints())
 	diagnosticsCmd.AddCommand(newCmdMetrics())
-	diagnosticsCmd.AddCommand(newCmdInstallSP())
 
 	return diagnosticsCmd
 }

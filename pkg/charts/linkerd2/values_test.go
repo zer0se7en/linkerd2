@@ -83,6 +83,7 @@ func TestNewValues(t *testing.T) {
 			OutboundConnectTimeout: "1000ms",
 			InboundConnectTimeout:  "100ms",
 			OpaquePorts:            "25,443,587,3306,5432,11211",
+			Await:                  true,
 		},
 		ProxyInit: &ProxyInit{
 			Image: &Image{
@@ -160,9 +161,7 @@ func TestNewValues(t *testing.T) {
 			},
 		}
 		expected.DestinationResources = controllerResources
-		expected.PublicAPIResources = controllerResources
 		expected.ProxyInjectorResources = controllerResources
-		expected.SPValidatorResources = controllerResources
 		expected.HeartbeatResources = controllerResources
 
 		expected.IdentityResources = &Resources{

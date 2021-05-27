@@ -2,6 +2,7 @@ package destination
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	pb "github.com/linkerd/linkerd2-proxy-api/go/destination"
@@ -16,13 +17,16 @@ import (
 const fullyQualifiedName = "name1.ns.svc.mycluster.local"
 const fullyQualifiedNameOpaque = "name3.ns.svc.mycluster.local"
 const fullyQualifiedNameOpaqueService = "name4.ns.svc.mycluster.local"
+const fullyQualifiedNameSkipped = "name5.ns.svc.mycluster.local"
 const clusterIP = "172.17.12.0"
 const clusterIPOpaque = "172.17.12.1"
 const podIP1 = "172.17.0.12"
 const podIP2 = "172.17.0.13"
 const podIPOpaque = "172.17.0.14"
+const podIPSkipped = "172.17.0.15"
 const port uint32 = 8989
 const opaquePort uint32 = 4242
+const skippedPort uint32 = 24224
 
 type mockDestinationGetServer struct {
 	util.MockServerStream
@@ -217,10 +221,59 @@ metadata:
   annotations:
     config.linkerd.io/opaque-ports: "4242"`,
 	}
+
+	meshedSkippedPodResource := []string{
+		`
+apiVersion: v1
+kind: Service
+metadata:
+  name: name5
+  namespace: ns
+spec:
+  type: LoadBalancer
+  clusterIP: 172.17.13.1
+  ports:
+  - port: 24224`,
+		`
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: name5
+  namespace: ns
+subsets:
+- addresses:
+  - ip: 172.17.0.15
+    targetRef:
+      kind: Pod
+      name: name5
+      namespace: ns
+  ports:
+  - port: 24224`,
+		`
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    linkerd.io/control-plane-ns: linkerd
+  annotations:
+    config.linkerd.io/skip-inbound-ports: "24224"
+  name: name5
+  namespace: ns
+status:
+  phase: Running
+  podIP: 172.17.0.15
+spec:
+  containers:
+    - env:
+      - name: LINKERD2_PROXY_INBOUND_LISTEN_ADDR
+        value: 0.0.0.0:4143
+      name: linkerd-proxy`,
+	}
 	res := append(meshedPodResources, clientSP...)
 	res = append(res, unmeshedPod)
 	res = append(res, meshedOpaquePodResources...)
 	res = append(res, meshedOpaqueServiceResources...)
+	res = append(res, meshedSkippedPodResource...)
 	k8sAPI, err := k8s.NewFakeAPI(res...)
 	if err != nil {
 		t.Fatalf("NewFakeAPI returned an error: %s", err)
@@ -235,11 +288,15 @@ metadata:
 		11211: {},
 	}
 
+	err = watcher.InitializeIndexers(k8sAPI)
+	if err != nil {
+		t.Fatalf("initializeIndexers returned an error: %s", err)
+	}
+
 	endpoints := watcher.NewEndpointsWatcher(k8sAPI, log, false)
 	opaquePorts := watcher.NewOpaquePortsWatcher(k8sAPI, log, defaultOpaquePorts)
 	profiles := watcher.NewProfileWatcher(k8sAPI, log)
 	trafficSplits := watcher.NewTrafficSplitWatcher(k8sAPI, log)
-	ips := watcher.NewIPWatcher(k8sAPI, endpoints, log)
 
 	// Sync after creating watchers so that the the indexers added get updated
 	// properly
@@ -250,7 +307,6 @@ metadata:
 		opaquePorts,
 		profiles,
 		trafficSplits,
-		ips,
 		k8sAPI.Node(),
 		true,
 		"linkerd",
@@ -326,6 +382,44 @@ func TestGet(t *testing.T) {
 			t.Fatalf("Expected %s but got %s", fmt.Sprintf("%s:%d", podIP1, port), updateAddAddress(t, stream.updates[0])[0])
 		}
 
+	})
+
+	t.Run("Return endpoint with unknown protocol hint and identity when service name contains skipped inbound port", func(t *testing.T) {
+		server := makeServer(t)
+		stream := &bufferingGetStream{
+			updates:          []*pb.Update{},
+			MockServerStream: util.NewMockServerStream(),
+		}
+
+		stream.Cancel()
+
+		path := fmt.Sprintf("%s:%d", fullyQualifiedNameSkipped, skippedPort)
+		err := server.Get(&pb.GetDestination{
+			Scheme: "k8s",
+			Path:   path,
+		}, stream)
+		if err != nil {
+			t.Fatalf("Got error: %s", err)
+		}
+
+		if len(stream.updates) == 0 || len(stream.updates) > 3 {
+			t.Fatalf("Expected 1 to 3 updates but got %d: %v", len(stream.updates), stream.updates)
+		}
+
+		last := stream.updates[len(stream.updates)-1]
+
+		addrs := last.GetAdd().Addrs
+		if len(addrs) == 0 {
+			t.Fatalf("Expected len(addrs) to be > 0")
+		}
+
+		if addrs[0].GetProtocolHint().GetProtocol() != nil || addrs[0].GetProtocolHint().GetOpaqueTransport() != nil {
+			t.Fatalf("Expected protocol hint for %s to be nil but got %+v", path, addrs[0].ProtocolHint)
+		}
+
+		if addrs[0].TlsIdentity != nil {
+			t.Fatalf("Expected TLS identity for %s to be nil but got %+v", path, addrs[0].TlsIdentity)
+		}
 	})
 }
 
@@ -588,10 +682,10 @@ func TestGetProfiles(t *testing.T) {
 		if !exists {
 			t.Fatalf("Expected 'namespace' metric label to exist but it did not")
 		}
-		if first.Endpoint.ProtocolHint == nil {
+		if first.GetEndpoint().GetProtocolHint() == nil {
 			t.Fatalf("Expected protocol hint but found none")
 		}
-		if first.Endpoint.ProtocolHint.GetOpaqueTransport() != nil {
+		if first.GetEndpoint().GetProtocolHint().GetOpaqueTransport() != nil {
 			t.Fatalf("Expected pod to not support opaque traffic on port %d", port)
 		}
 		if first.Endpoint.Addr.String() != epAddr.String() {
@@ -651,7 +745,7 @@ func TestGetProfiles(t *testing.T) {
 		if first.Endpoint == nil {
 			t.Fatalf("Expected response to have endpoint field")
 		}
-		if first.Endpoint.ProtocolHint != nil {
+		if first.Endpoint.GetProtocolHint().GetProtocol() != nil || first.Endpoint.GetProtocolHint().GetOpaqueTransport() != nil {
 			t.Fatalf("Expected no protocol hint but found one")
 		}
 	})
@@ -760,6 +854,44 @@ func TestGetProfiles(t *testing.T) {
 			t.Fatalf("Expected port %d to be an opaque protocol, but it was not", opaquePort)
 		}
 	})
+
+	t.Run("Return profile with unknown protocol hint and identity when pod contains skipped inbound port", func(t *testing.T) {
+		server := makeServer(t)
+		stream := &bufferingGetProfileStream{
+			updates:          []*pb.DestinationProfile{},
+			MockServerStream: util.NewMockServerStream(),
+		}
+
+		stream.Cancel()
+
+		path := fmt.Sprintf("%s:%d", podIPSkipped, skippedPort)
+		err := server.GetProfile(&pb.GetDestination{
+			Scheme: "k8s",
+			Path:   path,
+		}, stream)
+		if err != nil {
+			t.Fatalf("Got error: %s", err)
+		}
+
+		if len(stream.updates) == 0 || len(stream.updates) > 3 {
+			t.Fatalf("Expected 1 to 3 updates but got %d: %v", len(stream.updates), stream.updates)
+		}
+
+		last := stream.updates[len(stream.updates)-1]
+
+		addr := last.GetEndpoint()
+		if addr == nil {
+			t.Fatalf("Expected to not be nil")
+		}
+
+		if addr.GetProtocolHint().GetProtocol() != nil || addr.GetProtocolHint().GetOpaqueTransport() != nil {
+			t.Fatalf("Expected protocol hint for %s to be nil but got %+v", path, addr.ProtocolHint)
+		}
+
+		if addr.TlsIdentity != nil {
+			t.Fatalf("Expected TLS identity for %s to be nil but got %+v", path, addr.TlsIdentity)
+		}
+	})
 }
 
 func TestTokenStructure(t *testing.T) {
@@ -817,4 +949,154 @@ func toAddress(path string, port uint32) (*net.TcpAddress, error) {
 		Ip:   ip,
 		Port: port,
 	}, nil
+}
+
+func TestIpWatcherGetSvcID(t *testing.T) {
+	name := "service"
+	namespace := "test"
+	clusterIP := "10.256.0.1"
+	var port uint32 = 1234
+	k8sConfigs := fmt.Sprintf(`
+apiVersion: v1
+kind: Service
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  type: ClusterIP
+  clusterIP: %s
+  ports:
+  - port: %d`, name, namespace, clusterIP, port)
+
+	t.Run("get services IDs by IP address", func(t *testing.T) {
+		k8sAPI, err := k8s.NewFakeAPI(k8sConfigs)
+		if err != nil {
+			t.Fatalf("NewFakeAPI returned an error: %s", err)
+		}
+
+		err = watcher.InitializeIndexers(k8sAPI)
+		if err != nil {
+			t.Fatalf("InitializeIndexers returned an error: %s", err)
+		}
+
+		k8sAPI.Sync(nil)
+
+		svc, err := getSvcID(k8sAPI, clusterIP, logging.WithFields(nil))
+		if err != nil {
+			t.Fatalf("Error getting service: %s", err)
+		}
+		if svc == nil {
+			t.Fatalf("Expected to find service mapped to [%s]", clusterIP)
+		}
+		if svc.Name != name {
+			t.Fatalf("Expected service name to be [%s], but got [%s]", name, svc.Name)
+		}
+		if svc.Namespace != namespace {
+			t.Fatalf("Expected service namespace to be [%s], but got [%s]", namespace, svc.Namespace)
+		}
+
+		badClusterIP := "10.256.0.2"
+		svc, err = getSvcID(k8sAPI, badClusterIP, logging.WithFields(nil))
+		if err != nil {
+			t.Fatalf("Error getting service: %s", err)
+		}
+		if svc != nil {
+			t.Fatalf("Expected not to find service mapped to [%s]", badClusterIP)
+		}
+	})
+}
+
+func TestIpWatcherGetPod(t *testing.T) {
+	podIP := "10.255.0.1"
+	hostIP := "172.0.0.1"
+	var hostPort1 uint32 = 12345
+	var hostPort2 uint32 = 12346
+	expectedPodName := "hostPortPod1"
+	k8sConfigs := []string{`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostPortPod1
+  namespace: ns
+spec:
+  containers:
+  - image: test
+    name: hostPortContainer1
+    ports:
+    - containerPort: 12345
+      hostIP: 172.0.0.1
+      hostPort: 12345
+  - image: test
+    name: hostPortContainer2
+    ports:
+    - containerPort: 12346
+      hostIP: 172.0.0.1
+      hostPort: 12346
+status:
+  phase: Running
+  podIP: 10.255.0.1
+  hostIP: 172.0.0.1`,
+		`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+  namespace: ns
+status:
+  phase: Running
+  podIP: 10.255.0.1`,
+	}
+	t.Run("get pod by host IP and host port", func(t *testing.T) {
+		k8sAPI, err := k8s.NewFakeAPI(k8sConfigs...)
+		if err != nil {
+			t.Fatalf("failed to create new fake API: %s", err)
+		}
+
+		err = watcher.InitializeIndexers(k8sAPI)
+		if err != nil {
+			t.Fatalf("initializeIndexers returned an error: %s", err)
+		}
+
+		k8sAPI.Sync(nil)
+		// Get host IP pod that is mapped to the port `hostPort1`
+		pod, err := getPod(k8sAPI, hostIP, hostPort1, logging.WithFields(nil))
+		if err != nil {
+			t.Fatalf("failed to get pod: %s", err)
+		}
+		if pod == nil {
+			t.Fatalf("failed to find pod mapped to %s:%d", hostIP, hostPort1)
+		}
+		if pod.Name != expectedPodName {
+			t.Fatalf("expected pod name to be %s, but got %s", expectedPodName, pod.Name)
+		}
+		// Get host IP pod that is mapped to the port `hostPort2`; this tests
+		// that the indexer properly adds multiple containers from a single
+		// pod.
+		pod, err = getPod(k8sAPI, hostIP, hostPort2, logging.WithFields(nil))
+		if err != nil {
+			t.Fatalf("failed to get pod: %s", err)
+		}
+		if pod == nil {
+			t.Fatalf("failed to find pod mapped to %s:%d", hostIP, hostPort2)
+		}
+		if pod.Name != expectedPodName {
+			t.Fatalf("expected pod name to be %s, but got %s", expectedPodName, pod.Name)
+		}
+		// Get host IP pod with unmapped host port
+		pod, err = getPod(k8sAPI, hostIP, 12347, logging.WithFields(nil))
+		if err != nil {
+			t.Fatalf("expected no error when getting host IP pod with unmapped host port, but got: %s", err)
+		}
+		if pod != nil {
+			t.Fatal("expected no pod to be found with unmapped host port")
+		}
+		// Get pod IP pod and expect an error
+		_, err = getPod(k8sAPI, podIP, 12346, logging.WithFields(nil))
+		if err == nil {
+			t.Fatal("expected error when getting by pod IP and unmapped host port, but got none")
+		}
+		if !strings.Contains(err.Error(), "pods with a conflicting pod network IP") {
+			t.Fatalf("expected error to be pod IP address conflict, but got: %s", err)
+		}
+	})
 }

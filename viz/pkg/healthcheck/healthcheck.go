@@ -10,6 +10,7 @@ import (
 	"github.com/linkerd/linkerd2/pkg/healthcheck"
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/linkerd/linkerd2/pkg/tls"
+	"github.com/linkerd/linkerd2/pkg/version"
 	"github.com/linkerd/linkerd2/viz/metrics-api/client"
 	pb "github.com/linkerd/linkerd2/viz/metrics-api/gen/viz"
 	"github.com/linkerd/linkerd2/viz/pkg/labels"
@@ -67,9 +68,9 @@ func (hc *HealthChecker) RunChecks(observer healthcheck.CheckObserver) bool {
 
 // VizCategory returns a healthcheck.Category containing checkers
 // to verify the health of viz components
-func (hc *HealthChecker) VizCategory() healthcheck.Category {
+func (hc *HealthChecker) VizCategory() *healthcheck.Category {
 
-	return *healthcheck.NewCategory(LinkerdVizExtensionCheck, []healthcheck.Checker{
+	return healthcheck.NewCategory(LinkerdVizExtensionCheck, []healthcheck.Checker{
 		*healthcheck.NewChecker("linkerd-viz Namespace exists").
 			WithHintAnchor("l5d-viz-ns-exists").
 			Fatal().
@@ -165,6 +166,48 @@ func (hc *HealthChecker) VizCategory() healthcheck.Category {
 
 				return healthcheck.CheckPodsRunning(pods, "")
 			}),
+		*healthcheck.NewChecker("viz extension proxies are healthy").
+			WithHintAnchor("l5d-viz-proxy-healthy").
+			Fatal().
+			WithCheck(func(ctx context.Context) (err error) {
+				return hc.CheckProxyHealth(ctx, hc.ControlPlaneNamespace, hc.vizNamespace)
+			}),
+		*healthcheck.NewChecker("viz extension proxies are up-to-date").
+			WithHintAnchor("l5d-viz-proxy-cp-version").
+			Warning().
+			WithCheck(func(ctx context.Context) error {
+				var err error
+				if hc.VersionOverride != "" {
+					hc.LatestVersions, err = version.NewChannels(hc.VersionOverride)
+				} else {
+					uuid := "unknown"
+					if hc.UUID() != "" {
+						uuid = hc.UUID()
+					}
+					hc.LatestVersions, err = version.GetLatestVersions(ctx, uuid, "cli")
+				}
+				if err != nil {
+					return err
+				}
+
+				pods, err := hc.KubeAPIClient().GetPodsByNamespace(ctx, hc.vizNamespace)
+				if err != nil {
+					return err
+				}
+
+				return hc.CheckProxyVersionsUpToDate(pods)
+			}),
+		*healthcheck.NewChecker("viz extension proxies and cli versions match").
+			WithHintAnchor("l5d-viz-proxy-cli-version").
+			Warning().
+			WithCheck(func(ctx context.Context) error {
+				pods, err := hc.KubeAPIClient().GetPodsByNamespace(ctx, hc.vizNamespace)
+				if err != nil {
+					return err
+				}
+
+				return healthcheck.CheckIfProxyVersionsMatchWithCLI(pods)
+			}),
 		*healthcheck.NewChecker("prometheus is installed and configured correctly").
 			WithHintAnchor("l5d-viz-prometheus").
 			Warning().
@@ -246,9 +289,9 @@ func (hc *HealthChecker) VizCategory() healthcheck.Category {
 
 // VizDataPlaneCategory returns a healthcheck.Category containing checkers
 // to verify the data-plane metrics in prometheus and the tap injection
-func (hc *HealthChecker) VizDataPlaneCategory() healthcheck.Category {
+func (hc *HealthChecker) VizDataPlaneCategory() *healthcheck.Category {
 
-	return *healthcheck.NewCategory(LinkerdVizExtensionDataPlaneCheck, []healthcheck.Checker{
+	return healthcheck.NewCategory(LinkerdVizExtensionDataPlaneCheck, []healthcheck.Checker{
 		*healthcheck.NewChecker("data plane namespace exists").
 			WithHintAnchor("l5d-data-plane-exists").
 			Fatal().

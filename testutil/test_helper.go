@@ -47,6 +47,7 @@ type helm struct {
 	chart                   string
 	multiclusterChart       string
 	vizChart                string
+	vizStableChart          string
 	stableChart             string
 	releaseName             string
 	multiclusterReleaseName string
@@ -68,12 +69,10 @@ type Service struct {
 // LinkerdDeployReplicasEdge is a map containing the number of replicas for each Deployment and the main
 // container name, in the current code-base
 var LinkerdDeployReplicasEdge = map[string]DeploySpec{
-	"linkerd-controller":     {"linkerd", 1},
 	"linkerd-destination":    {"linkerd", 1},
 	"tap":                    {"linkerd-viz", 1},
 	"grafana":                {"linkerd-viz", 1},
 	"linkerd-identity":       {"linkerd", 1},
-	"linkerd-sp-validator":   {"linkerd", 1},
 	"web":                    {"linkerd-viz", 1},
 	"linkerd-proxy-injector": {"linkerd", 1},
 }
@@ -158,6 +157,7 @@ func NewTestHelper() *TestHelper {
 	helmChart := flag.String("helm-chart", "charts/linkerd2", "path to linkerd2's Helm chart")
 	multiclusterHelmChart := flag.String("multicluster-helm-chart", "charts/linkerd-multicluster", "path to linkerd2's multicluster Helm chart")
 	vizHelmChart := flag.String("viz-helm-chart", "charts/linkerd-viz", "path to linkerd2's viz extension Helm chart")
+	vizHelmStableChart := flag.String("viz-helm-stable-chart", "charts/linkerd-viz", "path to linkerd2's viz extension stable Helm chart")
 	helmStableChart := flag.String("helm-stable-chart", "linkerd/linkerd2", "path to linkerd2's stable Helm chart")
 	helmReleaseName := flag.String("helm-release", "", "install linkerd via Helm using this release name")
 	multiclusterHelmReleaseName := flag.String("multicluster-helm-release", "", "install linkerd multicluster via Helm using this release name")
@@ -208,6 +208,7 @@ func NewTestHelper() *TestHelper {
 			chart:                   *helmChart,
 			multiclusterChart:       *multiclusterHelmChart,
 			vizChart:                *vizHelmChart,
+			vizStableChart:          *vizHelmStableChart,
 			stableChart:             *helmStableChart,
 			releaseName:             *helmReleaseName,
 			multiclusterReleaseName: *multiclusterHelmReleaseName,
@@ -295,6 +296,12 @@ func (h *TestHelper) GetMulticlusterHelmChart() string {
 // GetLinkerdVizHelmChart returns the path to the Linkerd viz Helm chart
 func (h *TestHelper) GetLinkerdVizHelmChart() string {
 	return h.helm.vizChart
+}
+
+// GetLinkerdVizHelmStableChart returns the path to the Linkerd viz Helm
+// stable chart
+func (h *TestHelper) GetLinkerdVizHelmStableChart() string {
+	return h.helm.vizStableChart
 }
 
 // GetHelmStableChart returns the path to the Linkerd Helm stable chart
@@ -470,6 +477,8 @@ func (h *TestHelper) HelmUpgrade(chart string, arg ...string) (string, string, e
 		h.helm.releaseName,
 		"--kube-context", h.k8sContext,
 		"--set", "namespace=" + h.namespace,
+		"--timeout", "60m",
+		"--wait",
 		chart,
 	}, arg...)
 	return combinedOutput("", h.helm.path, withParams...)
@@ -483,6 +492,8 @@ func (h *TestHelper) HelmInstall(chart string, arg ...string) (string, string, e
 		chart,
 		"--kube-context", h.k8sContext,
 		"--set", "namespace=" + h.namespace,
+		"--timeout", "60m",
+		"--wait",
 	}, arg...)
 	return combinedOutput("", h.helm.path, withParams...)
 }
@@ -531,22 +542,6 @@ func (h *TestHelper) ValidateOutput(out, fixtureFile string) error {
 	}
 
 	if out != expected {
-		return fmt.Errorf(
-			"Expected:\n%s\nActual:\n%s", expected, out)
-	}
-
-	return nil
-}
-
-// ContainsOutput validates that a string is a substring in the contents
-// of a file in the test's testdata directory.
-func (h *TestHelper) ContainsOutput(out, fixtureFile string) error {
-	expected, err := ReadFile("testdata/" + fixtureFile)
-	if err != nil {
-		return err
-	}
-
-	if !strings.Contains(out, expected) {
 		return fmt.Errorf(
 			"Expected:\n%s\nActual:\n%s", expected, out)
 	}
