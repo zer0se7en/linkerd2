@@ -121,7 +121,7 @@ type ResourceConfig struct {
 		meta *metav1.ObjectMeta
 		// This fields hold labels and annotations which are to be added to the
 		// injected resource. This is different from meta.Labels and
-		// meta.Annotationswhich are the labels and annotations on the original
+		// meta.Annotations which are the labels and annotations on the original
 		// resource before injection.
 		labels      map[string]string
 		annotations map[string]string
@@ -248,7 +248,7 @@ func (conf *ResourceConfig) ParseMetaAndYAML(bytes []byte) (*Report, error) {
 }
 
 // GetOverriddenValues returns the final Values struct which is created
-// by overiding annoatated configuration on top of default Values
+// by overriding annotated configuration on top of default Values
 func (conf *ResourceConfig) GetOverriddenValues() (*linkerd2.Values, error) {
 	// Make a copy of Values and mutate that
 	copyValues, err := conf.values.DeepCopy()
@@ -663,7 +663,19 @@ func (conf *ResourceConfig) injectPodSpec(values *podPatch) {
 func (conf *ResourceConfig) injectProxyInit(values *podPatch) {
 
 	// Fill common fields from Proxy into ProxyInit
-	values.ProxyInit.Capabilities = values.Proxy.Capabilities
+	if values.Proxy.Capabilities != nil {
+		values.ProxyInit.Capabilities = &l5dcharts.Capabilities{}
+		values.ProxyInit.Capabilities.Add = values.Proxy.Capabilities.Add
+		values.ProxyInit.Capabilities.Drop = []string{}
+		for _, drop := range values.Proxy.Capabilities.Drop {
+			// Skip NET_RAW and NET_ADMIN as the init container requires them to setup iptables.
+			if drop == "NET_RAW" || drop == "NET_ADMIN" {
+				continue
+			}
+			values.ProxyInit.Capabilities.Drop = append(values.ProxyInit.Capabilities.Drop, drop)
+		}
+	}
+
 	values.ProxyInit.SAMountPath = values.Proxy.SAMountPath
 
 	if v := conf.pod.meta.Annotations[k8s.CloseWaitTimeoutAnnotation]; v != "" {

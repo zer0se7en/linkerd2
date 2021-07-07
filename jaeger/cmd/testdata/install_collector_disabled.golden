@@ -32,7 +32,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 09b8c09754744aff9027048d3863d2401e4547f07d87f6e3dee643947adb0976
+        checksum/config: 7cd13a5efac387ff6fffe14bdce45a64b0b462af3e55e8b0532c65a3140914d7
       labels:
         linkerd.io/extension: jaeger
         component: jaeger-injector
@@ -134,7 +134,7 @@ metadata:
 type: kubernetes.io/tls
 data:
   tls.crt: dGVzdC13ZWJob29rLWNydC1wZW0=
-  tls.key: dGVzdC13ZWJoaG9vay1rZXktcGVt
+  tls.key: dGVzdC13ZWJob29rLWtleS1wZW0=
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -169,6 +169,39 @@ metadata:
   name: jaeger
   namespace: linkerd-jaeger
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: psp
+  namespace: linkerd-jaeger
+  labels:
+    linkerd.io/extension: jaeger
+rules:
+- apiGroups: ['policy', 'extensions']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - linkerd-linkerd-control-plane
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jaeger-psp
+  namespace: linkerd-jaeger
+  labels:
+    linkerd.io/extension: jaeger
+roleRef:
+  kind: Role
+  name: psp
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: jaeger-injector
+  namespace: linkerd-jaeger
+- kind: ServiceAccount
+  name: jaeger
+  namespace: linkerd-jaeger
+---
 ###
 ### Tracing Jaeger Service
 ###
@@ -186,6 +219,8 @@ spec:
   ports:
     - name: collection
       port: 14268
+    - name: grpc
+      port: 14250
     - name: ui
       port: 16686
 ---
@@ -226,6 +261,8 @@ spec:
           name: admin
         - containerPort: 14268
           name: collection
+        - containerPort: 14250
+          name: grpc
         - containerPort: 16686
           name: ui
       dnsPolicy: ClusterFirst

@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/linkerd/linkerd2/pkg/k8s"
 	"github.com/linkerd/linkerd2/pkg/k8s/resource"
-	"github.com/prometheus/common/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -85,4 +88,61 @@ func ConfigureNamespaceFlagCompletion(
 				return results, cobra.ShellCompDirectiveDefault
 			})
 	}
+}
+
+// ConfigureOutputFlagCompletion sets up resource-aware completion for command
+// flags that accept an output name.
+func ConfigureOutputFlagCompletion(cmd *cobra.Command) {
+	cmd.RegisterFlagCompletionFunc("output",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return []string{"basic", "json", "short", "table"}, cobra.ShellCompDirectiveDefault
+		})
+}
+
+// ConfigureKubeContextFlagCompletion sets up resource-aware completion for command
+// flags based off of a kubeconfig
+func ConfigureKubeContextFlagCompletion(cmd *cobra.Command, kubeconfigPath string) {
+	cmd.RegisterFlagCompletionFunc("context",
+		func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			rules := clientcmd.NewDefaultClientConfigLoadingRules()
+			rules.ExplicitPath = kubeconfigPath
+			loader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{})
+			config, err := loader.RawConfig()
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveError
+			}
+
+			suggestions := []string{}
+			uniqClusters := map[string]struct{}{}
+			for _, ctx := range config.Contexts {
+				clusterName := ctx.Cluster
+				if strings.HasPrefix(clusterName, toComplete) {
+					if _, ok := uniqClusters[clusterName]; !ok {
+						suggestions = append(suggestions, ctx.Cluster)
+						uniqClusters[clusterName] = struct{}{}
+					}
+				}
+			}
+
+			return suggestions, cobra.ShellCompDirectiveDefault
+		})
+}
+
+// GetLabelSelector creates a label selector as a string based on a label key
+// whose value may be in the set provided as an argument to the function. If the
+// value set is empty then the selector will match resources where the label key
+// exists regardless of value.
+func GetLabelSelector(labelKey string, labelValues ...string) (string, error) {
+	selectionOp := selection.In
+	if len(labelValues) < 1 {
+		selectionOp = selection.Exists
+	}
+
+	labelRequirement, err := labels.NewRequirement(labelKey, selectionOp, labelValues)
+	if err != nil {
+		return "", err
+	}
+
+	selector := labels.NewSelector().Add(*labelRequirement)
+	return selector.String(), nil
 }

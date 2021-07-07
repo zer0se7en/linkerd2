@@ -315,6 +315,9 @@ rules:
 - apiGroups: ["linkerd.io"]
   resources: ["serviceprofiles"]
   verbs: ["list"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list"]
 - apiGroups: ["apiregistration.k8s.io"]
   resources: ["apiservices"]
   verbs: ["get"]
@@ -390,6 +393,20 @@ metadata:
     namespace: linkerd-viz
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: psp
+  namespace: linkerd-viz
+  labels:
+    linkerd.io/extension: viz
+rules:
+- apiGroups: ['policy', 'extensions']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - linkerd-linkerd-control-plane
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: viz-psp
@@ -413,6 +430,12 @@ subjects:
   namespace: linkerd-viz
 - kind: ServiceAccount
   name: prometheus
+  namespace: linkerd-viz
+- kind: ServiceAccount
+  name: metrics-api
+  namespace: linkerd-viz
+- kind: ServiceAccount
+  name: tap-injector
   namespace: linkerd-viz
 ---
 ###

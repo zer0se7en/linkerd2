@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	"github.com/fatih/color"
+	pkgcmd "github.com/linkerd/linkerd2/pkg/cmd"
 	"github.com/linkerd/linkerd2/pkg/healthcheck"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -13,6 +14,10 @@ import (
 const (
 	// ExtensionName is the value that the viz extension resources should be labeled with
 	ExtensionName = "viz"
+
+	// LegacyExtensionName is the value that the viz extension resources were labeled with
+	// until 15d1809bd043192bb21cacbc96112cce35bf384f
+	LegacyExtensionName = "linkerd-viz"
 
 	vizChartName            = "linkerd-viz"
 	defaultLinkerdNamespace = "linkerd"
@@ -42,7 +47,7 @@ var (
 	alphaNumDash = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
 )
 
-// NewCmdViz returns a new jeager command
+// NewCmdViz returns a new jaeger command
 func NewCmdViz() *cobra.Command {
 	vizCmd := &cobra.Command{
 		Use:   "viz",
@@ -83,5 +88,11 @@ func NewCmdViz() *cobra.Command {
 	vizCmd.AddCommand(NewCmdTop())
 	vizCmd.AddCommand(newCmdUninstall())
 
+	// resource-aware completion flag configurations
+	pkgcmd.ConfigureNamespaceFlagCompletion(
+		vizCmd, []string{"linkerd-namespace"},
+		kubeconfigPath, impersonate, impersonateGroup, kubeContext)
+
+	pkgcmd.ConfigureKubeContextFlagCompletion(vizCmd, kubeconfigPath)
 	return vizCmd
 }
